@@ -1,0 +1,7 @@
+llama-index
+llama-index-llms-openai
+llama-index-embeddings-openai
+llama_index.llms.dashscope
+llama-index-llms-dashscope
+llama-index-embeddings-dashscope
+python-dotenv
