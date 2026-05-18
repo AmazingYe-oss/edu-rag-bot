@@ -5,3 +5,7 @@ llama_index.llms.dashscope
 llama-index-llms-dashscope
 llama-index-embeddings-dashscope
 python-dotenv
+gradio
+jinja2
+pypdf
+docx2txt
