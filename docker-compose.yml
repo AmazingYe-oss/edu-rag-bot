@@ -1,0 +1,15 @@
+services:
+  edu-rag-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: edu-rag-bot
+    ports:
+      - "7860:7860"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./storage:/app/storage
+    restart: unless-stopped
+    
