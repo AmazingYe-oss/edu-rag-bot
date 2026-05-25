@@ -1,4 +1,37 @@
+# =========================
+# Local environment
+# =========================
 .env
+.env.*
+!.env.example
+
+# =========================
+# Terraform local files/state
+# =========================
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# =========================
+# IDE
+# =========================
+.vscode/
+
+# =========================
+# Python
+# =========================
 __pycache__/
 *.pyc
+.venv/
+venv/
+
+# =========================
+# OS
+# =========================
 .DS_Store
