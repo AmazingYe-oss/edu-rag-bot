@@ -5,27 +5,72 @@ on:
     branches:
       - main
 
+env:
+  ACR_REGISTRY: crpi-he7mqvhihpnvi08o.cn-shanghai.personal.cr.aliyuncs.com
+  IMAGE_REPOSITORY: my-rag-project/rag-service
+  GITOPS_REPO: AmazingYe-oss/edu-rag-bot-gitops
+  GITOPS_FILE: apps/edu-rag-bot/deployment.yaml
+
 jobs:
-  build-and-push:
+  build-and-update-gitops:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout application code
+        uses: actions/checkout@v4
 
       - name: Login to ACR
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
-          registry: crpi-he7mqvhihpnvi08o.cn-shanghai.personal.cr.aliyuncs.com
+          registry: ${{ env.ACR_REGISTRY }}
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
 
-      - name: Build and Push
-        uses: docker/build-push-action@v4
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           push: true
           tags: |
-            crpi-he7mqvhihpnvi08o.cn-shanghai.personal.cr.aliyuncs.com/my-rag-project/rag-service:latest
-            crpi-he7mqvhihpnvi08o.cn-shanghai.personal.cr.aliyuncs.com/my-rag-project/rag-service:${{ github.sha }}
+            ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:latest
+            ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}
+
+      - name: Checkout GitOps repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.GITOPS_REPO }}
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
+          ref: main
+
+      - name: Update image tag in GitOps repo
+        run: |
+          cd gitops
+
+          NEW_IMAGE="${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}"
+
+          echo "New image: ${NEW_IMAGE}"
+
+          sed -i "s|^\([[:space:]]*image: \).*|\1${NEW_IMAGE}|" "${{ env.GITOPS_FILE }}"
+
+          echo "Updated deployment.yaml:"
+          grep "image:" "${{ env.GITOPS_FILE }}"
+
+      - name: Commit and push GitOps changes
+        run: |
+          cd gitops
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git status
+
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git add "${{ env.GITOPS_FILE }}"
+          git commit -m "chore: update edu-rag-bot image to ${{ github.sha }}"
+          git push
