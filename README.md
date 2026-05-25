@@ -97,7 +97,7 @@ terraform apply -auto-approve
 ### 3. K8s / ArgoCD 部署
 ```bash
 # 假设 ArgoCD 已在集群中就绪，应用 GitOps 配置
-kubectl apply -f k8s/argocd-application.yaml
+kubectl apply -f edu-rag-bot-application.yaml
 ```
 
 ---
