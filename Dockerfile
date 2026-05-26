@@ -48,6 +48,8 @@ USER appuser
 # 拷贝代码和刚才本地建的 data 目录进镜像
 COPY --chown=appuser:appuser . .
 
-EXPOSE 7860
-CMD ["python", "app.py"]
+EXPOSE 8000 7860
+CMD ["python", "api.py"]
+
+
 

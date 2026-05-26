@@ -9,3 +9,7 @@ gradio
 jinja2
 pypdf
 docx2txt
+fastapi
+uvicorn
+pydantic
+prometheus-fastapi-instrumentator
