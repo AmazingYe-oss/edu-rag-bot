@@ -1,4 +1,4 @@
-# 🚀 RAG-Cloud-Native-Practice (大模型 RAG 云原生工程化实践)
+# RAG-Cloud-Native-Practice (大模型 RAG 云原生工程化实践)
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)
@@ -7,27 +7,27 @@
 ![GitOps](https://img.shields.io/badge/GitOps-ArgoCD-orange?logo=argo)
 ![CI/CD](https://img.shields.io/badge/CI-GitHub_Actions-green?logo=github-actions)
 
-## 📖 项目简介 (Overview)
+##项目简介 (Overview)
 
 本项目是一个面向云原生交付架构的工程化实践项目。
 项目将基于本地运行的**大语言模型 RAG（检索增强生成）问答应用**，进行完整的微服务重构、容器化封装，并最终通过 **Terraform、GitHub Actions 与 ArgoCD** 实现基础设施即代码 (IaC) 与纯正的 **GitOps (拉模式) 自动化部署链路**。
 
-> **💡 核心设计理念**：不局限于 AI 算法本身的开发，而是聚焦于 AI 应用从“本地脚本”到“生产级云原生应用”的完整工程化交付闭环。
+> **核心设计理念**：不局限于 AI 算法本身的开发，而是聚焦于 AI 应用从“本地脚本”到“生产级云原生应用”的完整工程化交付闭环。
 
 ---
 
-## 🏗️ 架构设计与 GitOps 工作流 (Architecture & Workflow)
+## 架构设计与 GitOps 工作流 (Architecture & Workflow)
 
 本项目严格遵循 GitOps 最佳实践，实现了从代码提交到集群状态同步的全自动化闭环。
 
 ```mermaid
 sequenceDiagram
-    participant Dev as 👨‍💻 开发者
-    participant CodeRepo as 🐙 GitHub 源码仓库
-    participant CI as ⚙️ GitHub Actions (CI)
-    participant ACR as 📦 阿里云 ACR 镜像仓
-    participant K8s as ☸️ Kubernetes 集群
-    participant ArgoCD as 🐙 ArgoCD (CD)
+    participant Dev as  开发者
+    participant CodeRepo as  GitHub 源码仓库
+    participant CI as  GitHub Actions (CI)
+    participant ACR as  阿里云 ACR 镜像仓
+    participant K8s as  Kubernetes 集群
+    participant ArgoCD as  ArgoCD (CD)
 
     Dev->>CodeRepo: 1. Push App Code (app.py)
     CodeRepo->>CI: 2. 触发 CI 流水线
@@ -40,7 +40,7 @@ sequenceDiagram
 
 ---
 
-## 🛠️ 技术栈 (Tech Stack)
+## 技术栈 (Tech Stack)
 
 *   **AI 与后端应用**：`Python 3.11`, `Gradio`, `DashScope API` (阿里云百炼)
 *   **基础设施编排 (IaC)**：`Terraform (HCL)` (自动化编排底层资源)
@@ -49,7 +49,7 @@ sequenceDiagram
 
 ---
 
-## 📂 核心目录结构 (Repository Structure)
+## 核心目录结构 (Repository Structure)
 
 ```text
 ├── .github/workflows/       # GitHub Actions CI 流水线定义
@@ -66,7 +66,7 @@ sequenceDiagram
 
 ---
 
-## 🔥 核心工程化亮点 (Key Features)
+## 核心工程化亮点 (Key Features)
 
 1. **容器化极致优化**：编写深度优化的 `Dockerfile`，使用 `python-slim` 基础镜像，结合 `.dockerignore` 缓存机制，规避冗余构建阻塞，压缩镜像体积。
 2. **IaC 基础设施即代码**：抛弃手工点击控制台，使用 `main.tf` (Terraform) 声明式管理底层资源。
@@ -75,7 +75,7 @@ sequenceDiagram
 
 ---
 
-## 🚀 快速开始 (Quick Start)
+## 快速开始 (Quick Start)
 
 ### 1. 本地 Docker 运行
 请确保已配置大模型 API Key，在项目根目录执行：
@@ -102,10 +102,10 @@ kubectl apply -f edu-rag-bot-application.yaml
 
 ---
 
-## 👤 作者 (Author)
+## 作者 (Author)
 
 **朱玮烨 (AmazingYe)**
-*   🎓 2027届 数据科学与大数据技术
-*   ☁️ AWS Certified Solutions Architect - Professional
-*   ☁️ 阿里云大模型 ACP 认证
-*   📫 寻求 **云计算 / 云原生 / DevOps / AI工程化** 相关实习机会，欢迎联系交流！
+*   2027届 数据科学与大数据技术
+*   AWS Certified Solutions Architect - Professional
+*   阿里云大模型 ACP 认证
+*   寻求 **云计算 / 云原生 / DevOps / AI工程化** 相关实习机会，欢迎联系交流！
