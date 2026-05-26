@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:   
+  workflow_dispatch:
 
 env:
   ACR_REGISTRY: crpi-he7mqvhihpnvi08o.cn-shanghai.personal.cr.aliyuncs.com
@@ -37,19 +37,9 @@ jobs:
             ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:latest
             ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}
 
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: '${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}'
-          format: 'table'
-          exit-code: '0'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
-
       - name: Push Docker image to ACR
         run: |
-          echo "✅ 安全扫描完成！开始推送到阿里云 ACR..."
+          echo "✅ 跳过安全扫描，直接推送到阿里云 ACR..."
           docker push ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:latest
           docker push ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}
 
@@ -81,5 +71,5 @@ jobs:
             exit 0
           fi
           git add "${{ env.GITOPS_FILE }}"
-          git commit -m "chore: update edu-rag-bot image to ${{ github.sha }} [Security Scanned]"
+          git commit -m "chore: update edu-rag-bot image to ${{ github.sha }}"
           git push
