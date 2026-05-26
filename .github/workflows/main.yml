@@ -26,15 +26,32 @@ jobs:
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
 
-      - name: Build and Push Docker image
+      - name: Build Docker image locally
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
-          push: true
+          load: true
           tags: |
             ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:latest
             ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}
+
+    
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}'
+          format: 'table'
+          exit-code: '1' 
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Push Docker image to ACR
+        run: |
+          echo "✅ Trivy 安全扫描完美通过！没有任何高危漏洞！开始推送到阿里云 ACR..."
+          docker push ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:latest
+          docker push ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}
 
       - name: Checkout GitOps repository
         uses: actions/checkout@v4
@@ -52,6 +69,7 @@ jobs:
 
           echo "New image: ${NEW_IMAGE}"
 
+          # 修改 deployment.yaml 里的 image 字段
           sed -i "s|^\([[:space:]]*image: \).*|\1${NEW_IMAGE}|" "${{ env.GITOPS_FILE }}"
 
           echo "Updated deployment.yaml:"
@@ -72,5 +90,5 @@ jobs:
           fi
 
           git add "${{ env.GITOPS_FILE }}"
-          git commit -m "chore: update edu-rag-bot image to ${{ github.sha }}"
+          git commit -m "chore: update edu-rag-bot image to ${{ github.sha }} [Security Scanned]"
           git push
