@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:   
 
 env:
   ACR_REGISTRY: crpi-he7mqvhihpnvi08o.cn-shanghai.personal.cr.aliyuncs.com
@@ -36,20 +37,19 @@ jobs:
             ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:latest
             ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}
 
-    
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: '${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}'
           format: 'table'
-          exit-code: '0' 
+          exit-code: '0'
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
 
       - name: Push Docker image to ACR
         run: |
-          echo "Trivy 安全扫描完美通过！没有任何高危漏洞！开始推送到阿里云 ACR..."
+          echo "✅ 安全扫描完成！开始推送到阿里云 ACR..."
           docker push ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:latest
           docker push ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}
 
@@ -64,31 +64,22 @@ jobs:
       - name: Update image tag in GitOps repo
         run: |
           cd gitops
-
           NEW_IMAGE="${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}"
-
           echo "New image: ${NEW_IMAGE}"
-
-          # 修改 deployment.yaml 里的 image 字段
           sed -i "s|^\([[:space:]]*image: \).*|\1${NEW_IMAGE}|" "${{ env.GITOPS_FILE }}"
-
           echo "Updated deployment.yaml:"
           grep "image:" "${{ env.GITOPS_FILE }}"
 
       - name: Commit and push GitOps changes
         run: |
           cd gitops
-
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
           git status
-
           if git diff --quiet; then
             echo "No changes to commit."
             exit 0
           fi
-
           git add "${{ env.GITOPS_FILE }}"
           git commit -m "chore: update edu-rag-bot image to ${{ github.sha }} [Security Scanned]"
           git push
