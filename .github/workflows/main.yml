@@ -20,26 +20,22 @@ jobs:
       - name: Checkout application code
         uses: actions/checkout@v4
 
-      - name: Login to ACR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.ACR_REGISTRY }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-
-      - name: Build Docker image locally
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          load: true
-          tags: |
-            ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:latest
-            ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}
-
-      - name: Push Docker image to ACR
+      # 【核心逃生舱 1】不依赖任何下载插件，直接用原生命令登录阿里云！
+      - name: Login to ACR (Raw Shell)
         run: |
-          echo "✅ 跳过安全扫描，直接推送到阿里云 ACR..."
+          echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u "${{ secrets.ACR_USERNAME }}" --password-stdin
+
+      # 【核心逃生舱 2】直接用原生命令打包镜像！没有任何中间商赚差价！
+      - name: Build Docker image locally (Raw Shell)
+        run: |
+          docker build \
+            -t ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:latest \
+            -t ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }} \
+            -f ./Dockerfile .
+
+      - name: Push Docker image to ACR (Raw Shell)
+        run: |
+          echo "✅ 原生命令打包成功！开始推送到阿里云 ACR..."
           docker push ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:latest
           docker push ${{ env.ACR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}
 
@@ -71,5 +67,5 @@ jobs:
             exit 0
           fi
           git add "${{ env.GITOPS_FILE }}"
-          git commit -m "chore: update edu-rag-bot image to ${{ github.sha }}"
+          git commit -m "chore: update edu-rag-bot image to ${{ github.sha }} [Raw Shell]"
           git push
