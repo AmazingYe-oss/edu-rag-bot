@@ -1,5 +1,5 @@
 # RAG-Cloud-Native-Practice (大模型 RAG 云原生工程化实践)
-
+[English Version](./README_EN.md) | 中文版
 ![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-Ready-blue?logo=kubernetes)
