@@ -1,5 +1,4 @@
 # RAG-Cloud-Native-Practice (大模型 RAG 云原生高阶架构实践)
-
 ![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Microservice-009688?logo=fastapi)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)
