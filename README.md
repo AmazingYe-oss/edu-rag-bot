@@ -25,41 +25,42 @@
 本项目在 Kubernetes 中实现了计算与存储分离、前后端解耦及流量精细化管控：
 
 ```mermaid
-flowchart TD
+flowchart LR
     Client["用户浏览器"]
 
-    subgraph K8s["Kubernetes Cluster"]
+    subgraph K8sCluster["Kubernetes Cluster"]
         Ingress["Nginx Ingress Controller"]
 
-        subgraph App["Application Layer"]
+        subgraph AppLayer["Application Layer"]
             UI["Frontend Pod - Gradio UI"]
             API["Backend Pod - FastAPI API"]
         end
 
-        subgraph Storage["Stateful Storage Layer"]
-            ChromaDB[("ChromaDB Vector Database")]
-            PVC[("PersistentVolumeClaim")]
+        subgraph StorageLayer["Stateful Storage Layer"]
+            ChromaDB["ChromaDB Vector Database"]
+            PVC["PersistentVolumeClaim"]
         end
 
-        subgraph Observability["Observability Layer"]
+        subgraph ObservabilityLayer["Observability Layer"]
             Prometheus["Prometheus ServiceMonitor"]
             Grafana["Grafana Dashboard"]
         end
     end
 
-    LLM(("Aliyun DashScope LLM"))
+    LLM["Aliyun DashScope LLM"]
 
-    Client -->|rag.amazingye.local| Ingress
-    Ingress --> UI
-    UI -->|HTTP API Call| API
+    Client -->|"rag.amazingye.local"| Ingress
+    Ingress -->|"Route Traffic"| UI
+    UI -->|"HTTP API Call"| API
 
-    API -.->|Vector Search| ChromaDB
-    ChromaDB -.->|Persistent Data| PVC
-    API -.->|LLM Chat Completion| LLM
+    API -->|"Vector Search"| ChromaDB
+    ChromaDB -->|"Persistent Data"| PVC
+    API -->|"LLM Chat Completion"| LLM
 
-    Prometheus ==>|Scrape Metrics| API
-    Grafana -.->|Query Metrics| Prometheus
+    Prometheus -->|"Scrape Metrics"| API
+    Grafana -->|"Query Metrics"| Prometheus
 ```
+
 
 
 
