@@ -27,39 +27,25 @@
 ```mermaid
 flowchart LR
     Client["用户浏览器"]
-
-    subgraph K8sCluster["Kubernetes Cluster"]
-        Ingress["Nginx Ingress Controller"]
-
-        subgraph AppLayer["Application Layer"]
-            UI["Frontend Pod - Gradio UI"]
-            API["Backend Pod - FastAPI API"]
-        end
-
-        subgraph StorageLayer["Stateful Storage Layer"]
-            ChromaDB["ChromaDB Vector Database"]
-            PVC["PersistentVolumeClaim"]
-        end
-
-        subgraph ObservabilityLayer["Observability Layer"]
-            Prometheus["Prometheus ServiceMonitor"]
-            Grafana["Grafana Dashboard"]
-        end
-    end
-
+    Ingress["Nginx Ingress Controller"]
+    UI["Frontend Pod - Gradio UI"]
+    API["Backend Pod - FastAPI API"]
+    ChromaDB["ChromaDB Vector Database"]
+    PVC["PersistentVolumeClaim"]
     LLM["Aliyun DashScope LLM"]
+    Prometheus["Prometheus ServiceMonitor"]
+    Grafana["Grafana Dashboard"]
 
     Client -->|"rag.amazingye.local"| Ingress
     Ingress -->|"Route Traffic"| UI
     UI -->|"HTTP API Call"| API
-
     API -->|"Vector Search"| ChromaDB
     ChromaDB -->|"Persistent Data"| PVC
     API -->|"LLM Chat Completion"| LLM
-
     Prometheus -->|"Scrape Metrics"| API
     Grafana -->|"Query Metrics"| Prometheus
 ```
+
 
 
 
