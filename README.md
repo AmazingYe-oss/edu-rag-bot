@@ -22,22 +22,46 @@
 
 ## 系统拓扑架构 (Architecture Topology)
 
-本项目在 Kubernetes 中实现了彻底的计算与存储分离、前后端解耦及流量精细化管控：
+本项目在 Kubernetes 中实现了计算与存储分离、前后端解耦及流量精细化管控：
 
 ```mermaid
-graph TD
-    Client([用户浏览器]) -->|rag.amazingye.local| Ingress[Nginx Ingress Controller]
-    Ingress --> UI[Frontend Pod / UI微服务]
-    UI -->|HTTP| API[Backend Pod / FastAPI核心算力]
-    
-    API -.->|1. 读取持久化知识| ChromaDB[(ChromaDB Vector DB)]
-    API -.->|2. 发起对话| LLM((Aliyun DashScope LLM))
-    
-    Prometheus[Prometheus ServiceMonitor] ==定时抓取==> API
-    Grafana[Grafana SRE 大盘] -.-> Prometheus
+flowchart TD
+    Client["用户浏览器"]
+
+    subgraph K8s["Kubernetes Cluster"]
+        Ingress["Nginx Ingress Controller"]
+
+        subgraph App["Application Layer"]
+            UI["Frontend Pod - Gradio UI"]
+            API["Backend Pod - FastAPI API"]
+        end
+
+        subgraph Storage["Stateful Storage Layer"]
+            ChromaDB[("ChromaDB Vector Database")]
+            PVC[("PersistentVolumeClaim")]
+        end
+
+        subgraph Observability["Observability Layer"]
+            Prometheus["Prometheus ServiceMonitor"]
+            Grafana["Grafana Dashboard"]
+        end
+    end
+
+    LLM(("Aliyun DashScope LLM"))
+
+    Client -->|rag.amazingye.local| Ingress
+    Ingress --> UI
+    UI -->|HTTP API Call| API
+
+    API -.->|Vector Search| ChromaDB
+    ChromaDB -.->|Persistent Data| PVC
+    API -.->|LLM Chat Completion| LLM
+
+    Prometheus ==>|Scrape Metrics| API
+    Grafana -.->|Query Metrics| Prometheus
 ```
 
----
+
 
 ## 核心工程化演进 (Key Engineering Highlights)
 
