@@ -1,14 +1,15 @@
 import os
+import chromadb
 
 from llama_index.core import (
     Settings,
     VectorStoreIndex,
     StorageContext,
-    load_index_from_storage,
 )
 from llama_index.core.llms import ChatMessage, MessageRole
 from llama_index.llms.dashscope import DashScope as DashScopeLLM
 from llama_index.embeddings.dashscope import DashScopeEmbedding
+from llama_index.vector_stores.chroma import ChromaVectorStore  # <--- 【新增】ChromaDB 专用连接器
 
 from src.prompts import build_system_prompt
 from src.document_loader import load_documents_from_directory
@@ -17,7 +18,7 @@ from src.document_loader import load_documents_from_directory
 class RAGService:
     """
     RAG 服务类：
-    负责文档加载、索引构建、索引持久化、检索和大模型问答
+    【V3.0 云原生架构版】状态彻底分离，向量索引持久化至 K8s 内部的 ChromaDB！
     """
 
     def __init__(self, config):
@@ -54,58 +55,44 @@ class RAGService:
         data_dir = self.config["data_dir"]
         return load_documents_from_directory(data_dir)
 
-    def _has_persisted_index(self):
-        """
-        判断本地是否已经存在持久化索引。
-        """
-        persist_dir = self.config["persist_dir"]
-
-        if not os.path.exists(persist_dir):
-            return False
-
-        # 不同版本 LlamaIndex 生成的文件名可能略有不同。
-        # 这里用核心文件判断。
-        required_files = [
-            "docstore.json",
-            "index_store.json",
-        ]
-
-        return all(
-            os.path.exists(os.path.join(persist_dir, file))
-            for file in required_files
-        )
-
     def _load_or_build_index(self):
         """
-        如果本地已有索引，则加载；
-        如果没有，则从文档构建索引并保存。
+        核心改造点：连向 K8s 内部的数据库，而不是操作本地磁盘！
         """
-        persist_dir = self.config["persist_dir"]
+        print(" 正在连接 K8s 内部的 ChromaDB 向量数据库...")
+        
+        chroma_host = os.getenv("CHROMA_HOST", "chromadb-svc")
+        chroma_client = chromadb.HttpClient(host=chroma_host, port=8000)
 
-        if self._has_persisted_index():
-            print(f"检测到已有索引，正在从 {persist_dir} 加载...")
 
-            storage_context = StorageContext.from_defaults(
-                persist_dir=persist_dir
+        collection_name = "edu_knowledge_base"
+        chroma_collection = chroma_client.get_or_create_collection(collection_name)
+
+    
+        vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+        storage_context = StorageContext.from_defaults(vector_store=vector_store)
+
+    
+        if chroma_collection.count() > 0:
+        
+            print(f"检测到 ChromaDB [ {collection_name} ] 中已有 {chroma_collection.count()} 条知识向量，直接极速挂载！")
+            
+            self.index = VectorStoreIndex.from_vector_store(
+                vector_store,
             )
-
-            self.index = load_index_from_storage(storage_context)
-
         else:
-            print("未检测到已有索引，正在从文档构建新索引...")
-
+            print(f"⚠️ ChromaDB [ {collection_name} ] 为空，正在从本地文档读取并灌入数据库...")
+            
             documents = self._load_documents()
-
-            self.index = VectorStoreIndex.from_documents(documents)
-
-            self.index.storage_context.persist(
-                persist_dir=persist_dir
+            
+            self.index = VectorStoreIndex.from_documents(
+                documents,
+                storage_context=storage_context
             )
-
-            print(f"索引已保存到：{persist_dir}")
+            print(" 索引构建完成，知识向量已全部成功持久化至底层 PVC 网络硬盘！")
 
         self.retriever = self.index.as_retriever(
-            similarity_top_k=self.config["similarity_top_k"]
+            similarity_top_k=self.config.get("similarity_top_k", 3)
         )
 
     def _retrieve_context(self, question):
@@ -117,7 +104,7 @@ class RAGService:
         if not nodes:
             return "未检索到相关知识库内容。"
 
-        context_list = []
+        context_list =[]
 
         for i, node in enumerate(nodes, start=1):
             content = node.get_content()
@@ -163,7 +150,7 @@ class RAGService:
             context=context
         )
 
-        messages = [
+        messages =[
             ChatMessage(
                 role=MessageRole.SYSTEM,
                 content=self.system_prompt
