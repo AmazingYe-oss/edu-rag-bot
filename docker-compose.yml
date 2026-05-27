@@ -1,15 +1,61 @@
+version: '3.8'
+
 services:
-  edu-rag-bot:
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: rag-chromadb
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    restart: unless-stopped
+    networks:
+      - rag-net
+
+  api:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: edu-rag-bot
+    container_name: rag-api
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
     ports:
-      - "7860:7860"
-    env_file:
-      - .env
+      - "8000:8000"
+    environment:
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
     volumes:
       - ./data:/app/data
-      - ./storage:/app/storage
+    depends_on:
+      - chromadb
     restart: unless-stopped
+    networks:
+      - rag-net
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag-ui
     
+    command: python ui.py
+    ports:
+      - "7860:7860"
+    environment:
+      
+      - API_URL=http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - rag-net
+
+
+networks:
+  rag-net:
+    driver: bridge
+
+
+volumes:
+  chroma_data:
+    driver: local

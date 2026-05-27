@@ -93,16 +93,16 @@ flowchart LR
 
 ### V1.0: 基础设施即代码 (IaC) 与 CI/CD 飞轮
 
-- **Terraform 自动化编排**：抛弃手工点击控制台，使用 `main.tf` 声明式管理底层云资源。
+- **Terraform 自动化编排**：抛弃手工点击控制台，使用 main.tf 声明式管理底层云资源。
 - **Docker 容器化改造**：将本地 RAG 应用封装为标准容器镜像，实现环境一致性和可移植交付。
 - **GitHub Actions 自动化流水线**：代码 Push 后自动完成构建、扫描、推送和配置更新。
-- **Trivy 安全左移扫描**：在镜像推送前执行漏洞扫描，对 `CRITICAL` 和 `HIGH` 级别漏洞进行阻断。
+- **Trivy 安全左移扫描**：在镜像推送前执行漏洞扫描，对 CRITICAL 和 HIGH 级别漏洞进行阻断。
 - **双仓 GitOps 模式**：业务代码仓与 Kubernetes Manifests 配置仓分离，职责边界清晰。
 - **ArgoCD Pull-based Delivery**：通过 ArgoCD 拉取 GitOps 仓库状态并同步到集群，避免 CI 系统直接持有集群高权限凭证。
 
 ### V2.0: 微服务拆分与全链路可观测性 (Observability)
 
-- **前后端解耦**：将单体 `app.py` 拆分为前端 `ui.py` 与后端 `api.py`。
+- **前后端解耦**：将单体 app.py 拆分为前端 ui.py 与后端 api.py。
 - **FastAPI 后端算力层**：后端服务专注于 RAG 检索、向量查询和大模型调用。
 - **Gradio 前端展示层**：前端服务专注于用户交互和问答展示。
 - **独立横向扩缩容**：前后端可根据访问压力和算力压力分别扩容。
@@ -123,46 +123,64 @@ flowchart LR
 ## 技术栈 (Tech Stack)
 
 ### AI 应用层
-
-- Python 3.11
-- LlamaIndex
-- FastAPI
-- Gradio
-- DashScope API
-
+- Python 3.11, LlamaIndex, FastAPI, Gradio, DashScope API
 ### 容器化与编排
-
-- Docker
-- Docker Compose
-- Kubernetes
-- Kustomize
-- Nginx Ingress Controller
-
+- Docker, Docker Compose, Kubernetes, Kustomize, Nginx Ingress Controller
 ### 有状态存储
-
-- ChromaDB
-- StatefulSet
-- PersistentVolumeClaim
-
+- ChromaDB, StatefulSet, PersistentVolumeClaim
 ### CI/CD 与 GitOps
-
-- GitHub Actions
-- 阿里云 ACR
-- ArgoCD
-- GitOps 双仓模式
-
+- GitHub Actions, 阿里云 ACR, ArgoCD, GitOps 双仓模式
 ### 可观测性与 SRE
-
-- Prometheus
-- Grafana
-- kube-prometheus-stack
-- ServiceMonitor
-- prometheus-fastapi-instrumentator
-
+- Prometheus, Grafana, kube-prometheus-stack, ServiceMonitor
 ### 基础设施即代码
+- Terraform, HCL
 
-- Terraform
-- HCL
+---
+
+## 快速开始 (Quick Start)
+
+本项目提供本地容器化快速联调与 Kubernetes 集群原生部署两种运行方式。
+请确保在运行前已获取大模型 API 凭证（以阿里云 DashScope 为例）。
+
+### 方式一：本地 Docker Compose 运行 (推荐开发调试)
+无需 K8s 集群，在本地即可一键拉起前后端双微服务与 ChromaDB 数据库。
+
+1. 克隆业务源码仓库：
+```bash
+git clone https://github.com/AmazingYe-oss/edu-rag-bot.git
+cd edu-rag-bot
+```
+
+2. 注入大模型 API 凭证并启动：
+```bash
+export DASHSCOPE_API_KEY="sk-your-api-key-here"
+docker-compose up -d --build
+```
+
+3. 访问浏览器体验：
+- 前端交互界面 (UI): `http://localhost:7860`
+- 后端接口文档 (API): `http://localhost:8000/docs`
+
+### 方式二：Kubernetes 原生部署 (推荐生产验证)
+配合 GitOps 配置仓库，在 K8s 集群中实现包含网关、探针、持久化存储在内的云原生部署。
+
+1. 创建命名空间并注入机密凭证 (Secret)：
+```bash
+kubectl create namespace edu-rag-bot
+kubectl create secret generic rag-secrets \
+  --from-literal=DASHSCOPE_API_KEY="sk-your-api-key-here" \
+  -n edu-rag-bot
+```
+
+2. 通过 Kustomize 一键部署全套资源清单：
+```bash
+kubectl apply -k https://github.com/AmazingYe-oss/edu-rag-bot-gitops.git/apps/edu-rag-bot
+```
+
+3. (可选) GitOps 纳管：若集群已安装 ArgoCD，可直接应用 Application 资源开启自动化同步：
+```bash
+kubectl apply -f https://raw.githubusercontent.com/AmazingYe-oss/edu-rag-bot-gitops/main/edu-rag-bot-application.yaml
+```
 
 ---
 
@@ -175,11 +193,11 @@ flowchart LR
 ├── api.py                   # FastAPI 后端微服务算力层
 ├── ui.py                    # Gradio 前端展示层
 ├── Dockerfile               # 微服务统一镜像构建文件
+├── docker-compose.yml       # 本地快速联调编排文件
 ├── requirements.txt         # Python 核心依赖
 └── main.tf                  # Terraform IaC 基础设施代码
 ```
-
-> 注：Kubernetes 集群的 GitOps 声明式配置，如 Deployment、Service、Ingress、StatefulSet、ServiceMonitor、Kustomization 等，维护在独立的 GitOps 配置仓库中。
+> 注：Kubernetes 集群的 GitOps 声明式配置（Deployment、Ingress、StatefulSet、ServiceMonitor 等）维护在独立的 GitOps 配置仓库中。
 
 ---
 
@@ -199,7 +217,6 @@ flowchart LR
 ## 适用场景 (Use Cases)
 
 本项目适用于以下场景：
-
 - 企业内部知识库问答系统
 - 云原生 AI 应用工程化实践
 - Kubernetes 上的 RAG 服务部署
@@ -211,7 +228,6 @@ flowchart LR
 ## 作者 (Author)
 
 **朱玮烨 (AmazingYe)**
-
 - 2027届 数据科学与大数据技术
 - AWS Certified Solutions Architect - Professional
 - 阿里云大模型 ACP 认证
