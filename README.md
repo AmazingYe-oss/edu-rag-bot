@@ -24,18 +24,18 @@
 
 本项目在 Kubernetes 中实现了彻底的计算与存储分离、前后端解耦及流量精细化管控：
 
-~~~mermaid
+```mermaid
 graph TD
-    Client([用户浏览器]) -->|rag.amazingye.local| Ingress[Nginx Ingress Controller 七层网关]
-    Ingress --> UI[Frontend Pod / UI 微服务]
-    UI -->|HTTP| API[Backend Pod / FastAPI 核心算力]
+    Client([用户浏览器]) -->|rag.amazingye.local| Ingress[Nginx Ingress Controller]
+    Ingress --> UI[Frontend Pod / UI微服务]
+    UI -->|HTTP| API[Backend Pod / FastAPI核心算力]
     
-    API -.->|1. 读取持久化知识| ChromaDB[(ChromaDB Vector Database\nStatefulSet + PVC)]
+    API -.->|1. 读取持久化知识| ChromaDB[(ChromaDB Vector DB)]
     API -.->|2. 发起对话| LLM((Aliyun DashScope LLM))
     
     Prometheus[Prometheus ServiceMonitor] ==定时抓取==> API
     Grafana[Grafana SRE 大盘] -.-> Prometheus
-~~~
+```
 
 ---
 
@@ -72,7 +72,7 @@ graph TD
 
 ## 核心代码目录结构 (Repository Structure)
 
-~~~text
+```text
 ├── .github/workflows/       # GitHub Actions CI 自动化流水线
 ├── data/                    # RAG 知识库初始文档
 ├── src/                     # RAG 核心逻辑实现
@@ -81,7 +81,7 @@ graph TD
 ├── Dockerfile               # 微服务统一胖镜像构建文件，结合 K8s Command 动态启动
 ├── requirements.txt         # 核心依赖 (包含 chromadb, prometheus探针等)
 └── main.tf                  # Terraform IaC 基础设施代码
-~~~
+```
 *(注：Kubernetes 集群的 GitOps 声明式配置，如 StatefulSet, ServiceMonitor, Ingress, Kustomization 等维护在独立的配置仓库中。)*
 
 ---
