@@ -161,9 +161,26 @@ docker-compose up -d --build
 - 后端接口文档 (API): `http://localhost:8000/docs`
 
 ### 方式二：Kubernetes 原生部署 (推荐生产验证)
-配合 GitOps 配置仓库，在 K8s 集群中实现包含网关、探针、持久化存储在内的云原生部署。
 
-1. 创建命名空间并注入机密凭证 (Secret)：
+配合 GitOps 配置仓库，在 K8s 集群中实现包含网关、探针、持久化存储及监控在内的完整云原生部署。
+
+#### 步骤 0：集群基础环境预置（必做项）
+> **避坑提示**：如果是全新安装的 K8s（或重置了 Docker Desktop），**必须**先安装基础组件，否则会导致后续部署报错或持续卡在 `Progressing` 状态。
+
+1. **安装 NGINX Ingress 网关**（用于接收外部网页请求）：
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/cloud/deploy.yaml
+```
+
+2. **安装 Prometheus Operator**（提供 ServiceMonitor 等监控 CRD 资源）：
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+helm install prometheus-operator prometheus-community/kube-prometheus-stack -n edu-rag-bot --create-namespace
+```
+
+#### 步骤 1：注入机密凭证 (Secret)
+由于安全原因，API Key 不应硬编码在 Git 仓库中。请**先创建命名空间**，并手动注入大模型 API 密钥（注意：**Secret 命名必须严格为 `edu-rag-bot-secret`**，否则后端容器将因读取不到配置而无法启动）：
 ```bash
 kubectl create namespace edu-rag-bot
 kubectl create secret generic edu-rag-bot-secret \
@@ -171,24 +188,58 @@ kubectl create secret generic edu-rag-bot-secret \
   -n edu-rag-bot
 ```
 
-2. 通过 Kustomize 一键部署全套资源清单：
+#### 步骤 2：一键应用资源清单
+你可以选择以下两种方式之一部署核心业务代码：
+
+*   **选项 A：使用 Kustomize 声明式部署（常规方式）**
 ```bash
 kubectl apply -k https://github.com/AmazingYe-oss/edu-rag-bot-gitops.git/apps/edu-rag-bot
 ```
 
-3. (可选) GitOps 纳管：若集群已安装 ArgoCD，可直接应用 Application 资源开启自动化同步：
+*   **选项 B：接入 ArgoCD GitOps 纳管（进阶推荐）**
+若集群已安装 ArgoCD，可直接应用 Application 资源，开启自动化同步流水线：
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/AmazingYe-oss/edu-rag-bot-gitops/main/edu-rag-bot-application.yaml
 ```
 
-4. 如果出现CRDs are installed first问题
+#### 步骤 3：验证与访问
+部署完成后，观察所有 Pod 是否进入 `Running` 状态：
 ```bash
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
-
-helm install prometheus-operator prometheus-community/kube-prometheus-stack -n edu-rag-bot --create-namespace
-
+kubectl get pods -n edu-rag-bot -w
 ```
+
+待全部就绪后，系统提供了**两种**访问方式供本地测试使用：
+
+**访问方式一：通过 Ingress 本地虚拟域名访问（推荐，最贴近生产）**
+本项目 Ingress 配置的路由规则为 `rag.weiye.local`。需要在本机配置 hosts 域名劫持：
+1. 以管理员身份打开文件（Windows: `C:\Windows\System32\drivers\etc\hosts`，Mac/Linux: `/etc/hosts`）。
+2. 在文件末尾添加以下映射并保存：
+   `127.0.0.1 rag.weiye.local`
+3. 打开浏览器，直接访问：http://rag.weiye.local
+
+**访问方式二：物理端口转发访问（备用方案）**
+若 Ingress 暂未生效，或不想修改系统 hosts 文件，可使用原生端口转发直连前端容器：
+1. 在终端执行以下命令（保持窗口开启不要关闭）：
+```bash
+kubectl port-forward deployment/rag-frontend 7860:7860 -n edu-rag-bot
+```
+2. 打开浏览器访问：http://localhost:7860
+
+---
+
+#### 常见故障排查 (Troubleshooting)
+
+*   **Q: 后端 Pod 状态为 `CreateContainerConfigError`？**
+    *   **A**: 通常是因为忘记执行【步骤 1】注入 API Key，或者 Secret 命名不是 `edu-rag-bot-secret`。可通过 `kubectl describe pod <pod-name> -n edu-rag-bot` 查看底部 Events 确认。
+
+*   **Q: 后端 Pod 报错 `KeyError: 'dimension'` 或 404 无法连接 ChromaDB？**
+    *   **A**: 典型的微服务版本漂移问题。请确保后端的 `chromadb` 依赖版本与 K8s 中部署的 ChromaDB 镜像版本一致（本项目要求统一为 **`0.5.3`**）。
+
+*   **Q: 部署时提示 `no matches for kind "ServiceMonitor"`？**
+    *   **A**: 集群中缺失 Prometheus 的 CRD 资源。请退回执行【步骤 0】安装 kube-prometheus-stack。
+
+*   **Q: ArgoCD 界面中 Ingress 资源一直处于黄色 `Progressing` 状态？**
+    *   **A**: 集群未安装 Ingress Controller，导致流量图纸无法被解析分发。执行【步骤 0】安装 NGINX Ingress 即可修复。
 
 ---
 

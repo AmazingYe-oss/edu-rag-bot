@@ -157,32 +157,85 @@ docker-compose up -d --build
 * Backend API Docs: `http://localhost:8000/docs`
 
 ### Method 2: Kubernetes Native Deployment (Recommended for Production)
-Deploy the full cloud-native stack (including Ingress, ServiceMonitors, and PVCs) via Kustomize and GitOps.
 
-1. Create a namespace and inject the Secret:
+Deploy the complete cloud-native architecture including API gateway, probes, persistent storage, and monitoring in a K8s cluster using GitOps.
+
+#### Step 0: Cluster Infrastructure Setup (Mandatory)
+> **Pitfall Warning**: If this is a fresh K8s installation (or Docker Desktop was just reset), you **must** install the fundamental components first. Otherwise, subsequent deployments will fail or remain stuck in the `Progressing` state.
+
+1. **Install NGINX Ingress Controller** (To receive external web requests):
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/cloud/deploy.yaml
+```
+
+2. **Install Prometheus Operator** (Provides ServiceMonitor and other monitoring CRDs):
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+helm install prometheus-operator prometheus-community/kube-prometheus-stack -n edu-rag-bot --create-namespace
+```
+
+#### Step 1: Inject Secrets
+For security reasons, API Keys should not be hard-coded in the Git repository. Please **create the namespace first** and manually inject the LLM API Key (Note: **The Secret must be strictly named `edu-rag-bot-secret`**, otherwise the backend container will fail to start due to missing configurations):
 ```bash
 kubectl create namespace edu-rag-bot
 kubectl create secret generic edu-rag-bot-secret \
-  --from-literal=DASHSCOPE_API_KEY="sk-这里填你真实的Key" \
+  --from-literal=DASHSCOPE_API_KEY="sk-fill_your_real_key_here" \
   -n edu-rag-bot
 ```
 
-2. Apply manifests using Kustomize:
+#### Step 2: Apply Resource Manifests
+Choose one of the following two methods to deploy the core business code:
+
+*   **Option A: Declarative Deployment via Kustomize (Standard)**
 ```bash
 kubectl apply -k https://github.com/AmazingYe-oss/edu-rag-bot-gitops.git/apps/edu-rag-bot
 ```
 
-3. (Optional) GitOps Management: If ArgoCD is installed, apply the Application resource for auto-sync:
+*   **Option B: GitOps via ArgoCD (Advanced/Recommended)**
+If ArgoCD is already installed in your cluster, you can directly apply the Application resource to enable the automated sync pipeline:
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/AmazingYe-oss/edu-rag-bot-gitops/main/edu-rag-bot-application.yaml
 ```
-4. If the 'CRDs are installed first' issue occurs
-```bash
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
 
-helm install prometheus-operator prometheus-community/kube-prometheus-stack -n edu-rag-bot --create-namespace
+#### Step 3: Verification and Access
+After deployment, monitor the status of all Pods until they are `Running`:
+```bash
+kubectl get pods -n edu-rag-bot -w
 ```
+
+Once all resources are ready, the system provides **two** access methods for local testing:
+
+**Access Method 1: Local Virtual Domain via Ingress (Recommended, closest to production)**
+The Ingress routing rule is configured as `rag.weiye.local`. You need to configure local DNS hijacking in your `hosts` file:
+1. Open the file as an administrator (Windows: `C:\Windows\System32\drivers\etc\hosts`, Mac/Linux: `/etc/hosts`).
+2. Add the following mapping at the end of the file and save:
+   `127.0.0.1 rag.weiye.local`
+3. Open your browser and visit: http://rag.weiye.local
+
+**Access Method 2: Physical Port Forwarding (Fallback)**
+If Ingress is not yet effective or you don't want to modify the system `hosts` file, use native port forwarding to connect directly to the frontend container:
+1. Run the following command in the terminal (keep the window open):
+```bash
+kubectl port-forward deployment/rag-frontend 7860:7860 -n edu-rag-bot
+```
+2. Open your browser and visit: http://localhost:7860
+
+---
+
+#### Troubleshooting
+
+*   **Q: Backend Pod status is `CreateContainerConfigError`?**
+    *   **A**: Usually caused by skipping [Step 1] to inject the API Key, or the Secret is not named `edu-rag-bot-secret`. You can verify this by checking the Events section at the bottom of `kubectl describe pod <pod-name> -n edu-rag-bot`.
+
+*   **Q: Backend Pod throws `KeyError: 'dimension'` or 404 connection error to ChromaDB?**
+    *   **A**: A classic microservice version drift issue. Ensure that the `chromadb` dependency version in the backend matches the ChromaDB image version deployed in K8s (This project strictly requires **`0.5.3`** for both).
+
+*   **Q: Deployment fails with `no matches for kind "ServiceMonitor"`?**
+    *   **A**: Prometheus CRD resources are missing in the cluster. Please return to [Step 0] and install the kube-prometheus-stack.
+
+*   **Q: The Ingress resource in the ArgoCD UI is stuck in the yellow `Progressing` state?**
+    *   **A**: The cluster does not have an Ingress Controller installed, causing the traffic routing blueprint to remain unresolved. Execute [Step 0] to install the NGINX Ingress Controller to fix it instantly.
 
 ---
 
