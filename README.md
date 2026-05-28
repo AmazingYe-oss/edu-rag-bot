@@ -166,8 +166,8 @@ docker-compose up -d --build
 1. 创建命名空间并注入机密凭证 (Secret)：
 ```bash
 kubectl create namespace edu-rag-bot
-kubectl create secret generic rag-secrets \
-  --from-literal=DASHSCOPE_API_KEY="sk-your-api-key-here" \
+kubectl create secret generic edu-rag-bot-secret \
+  --from-literal=DASHSCOPE_API_KEY="sk-这里填你真实的Key" \
   -n edu-rag-bot
 ```
 
@@ -179,6 +179,15 @@ kubectl apply -k https://github.com/AmazingYe-oss/edu-rag-bot-gitops.git/apps/ed
 3. (可选) GitOps 纳管：若集群已安装 ArgoCD，可直接应用 Application 资源开启自动化同步：
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/AmazingYe-oss/edu-rag-bot-gitops/main/edu-rag-bot-application.yaml
+```
+
+4. 如果出现CRDs are installed first问题
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+
+helm install prometheus-operator prometheus-community/kube-prometheus-stack -n edu-rag-bot --create-namespace
+
 ```
 
 ---

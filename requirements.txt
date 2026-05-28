@@ -13,6 +13,6 @@ fastapi
 uvicorn
 pydantic
 prometheus-fastapi-instrumentator
-chromadb>=0.4.24
+chromadb==0.5.3
 llama-index-vector-stores-chroma
 

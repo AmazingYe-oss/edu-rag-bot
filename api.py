@@ -4,6 +4,10 @@ from src.config import load_config
 from src.rag_service import RAGService
 import traceback
 from prometheus_fastapi_instrumentator import Instrumentator
+import chromadb
+from llama_index.vector_stores.chroma import ChromaVectorStore
+from llama_index.core import StorageContext
+
 
 config = load_config()
 rag_service=RAGService(config)

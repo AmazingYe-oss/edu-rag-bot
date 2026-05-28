@@ -162,8 +162,8 @@ Deploy the full cloud-native stack (including Ingress, ServiceMonitors, and PVCs
 1. Create a namespace and inject the Secret:
 ```bash
 kubectl create namespace edu-rag-bot
-kubectl create secret generic rag-secrets \
-  --from-literal=DASHSCOPE_API_KEY="sk-your-api-key-here" \
+kubectl create secret generic edu-rag-bot-secret \
+  --from-literal=DASHSCOPE_API_KEY="sk-这里填你真实的Key" \
   -n edu-rag-bot
 ```
 
@@ -175,6 +175,13 @@ kubectl apply -k https://github.com/AmazingYe-oss/edu-rag-bot-gitops.git/apps/ed
 3. (Optional) GitOps Management: If ArgoCD is installed, apply the Application resource for auto-sync:
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/AmazingYe-oss/edu-rag-bot-gitops/main/edu-rag-bot-application.yaml
+```
+4. If the 'CRDs are installed first' issue occurs
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+
+helm install prometheus-operator prometheus-community/kube-prometheus-stack -n edu-rag-bot --create-namespace
 ```
 
 ---
