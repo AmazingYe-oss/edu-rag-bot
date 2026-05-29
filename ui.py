@@ -5,6 +5,7 @@ import uuid
 import gradio as gr
 
 API_URL = os.getenv("API_URL", "http://localhost:8000/api/chat")
+UPLOAD_URL = os.getenv("UPLOAD_URL", "http://localhost:8000/api/upload")
 
 def answer_question(question, session_id):
     """
@@ -54,6 +55,28 @@ def answer_question(question, session_id):
     except Exception as e:
         yield f"系统开小差了，调用后端 API 失败: {str(e)}", ""
 
+
+def upload_file_to_oss(file):
+    """
+    上传文件到阿里云 OSS
+    """
+    if file is None:
+        return "请先选择文件。"
+    
+    try:
+        # 读取文件内容
+        with open(file.name, "rb") as f:
+            files = {"file": (os.path.basename(file.name), f, "application/octet-stream")}
+            response = requests.post(UPLOAD_URL, files=files, timeout=120)
+            response.raise_for_status()
+            result = response.json()
+            filename = result.get("filename", "未知")
+            url = result.get("url", "未知")
+            return f"✅ 上传成功！\n文件名：{filename}\nURL：{url}"
+    except Exception as e:
+        return f"❌ 上传失败：{str(e)}"
+
+
 # ==========================================
 # Gradio 界面构建
 # ==========================================
@@ -86,6 +109,28 @@ with gr.Blocks(title="教育内容开发公司新员工答疑机器人") as demo
         fn=answer_question, 
         inputs=[question_input, session_state], 
         outputs=[answer_output, context_output]
+    )
+
+    # ==========================================
+    # 文件上传区域
+    # ==========================================
+    gr.Markdown("---")
+    gr.Markdown("## 📁 文件上传到阿里云 OSS")
+
+    with gr.Row():
+        file_input = gr.File(
+            label="选择要上传的文件",
+            file_types=[".txt", ".pdf", ".docx", ".md", ".ipynb", ".jpg", ".png", ".zip"],
+            interactive=True
+        )
+        upload_button = gr.Button("⬆️ 上传到 OSS", variant="secondary")
+
+    upload_result = gr.Markdown(label="上传结果")
+
+    upload_button.click(
+        fn=upload_file_to_oss,
+        inputs=file_input,
+        outputs=upload_result
     )
 
 if __name__ == "__main__":
