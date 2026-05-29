@@ -16,5 +16,8 @@ prometheus-fastapi-instrumentator
 chromadb==0.5.3
 llama-index-vector-stores-chroma
 redis
-fastapi-limiter
+fastapi-limiter==0.1.6
+dashvector
+llama-index-vector-stores-dashvector
+oss2
 
