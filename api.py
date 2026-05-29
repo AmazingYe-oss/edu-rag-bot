@@ -144,6 +144,8 @@ async def upload_file(file: UploadFile = File(...)):
     # 1. 解决撞车：使用 UUID 生成绝对唯一的文件名
     ext = file.filename.split('.')[-1] if '.' in file.filename else ''
     unique_filename = f"{uuid.uuid4().hex}.{ext}"
+    # 文件存储在 public/ 文件夹下
+    oss_key = f"public/{unique_filename}"
 
     try:
         # 2. 读取文件内容（必须读取，因为 oss2.put_object 需要 bytes）
@@ -152,14 +154,14 @@ async def upload_file(file: UploadFile = File(...)):
         # 3. 直接调用 put_object（同步方法，但 FastAPI 异步端点中直接调用会阻塞，但可以工作）
         # 使用 asyncio.to_thread 避免阻塞主线程
         import asyncio
-        await asyncio.to_thread(oss_bucket.put_object, unique_filename, content)
+        await asyncio.to_thread(oss_bucket.put_object, oss_key, content)
 
         # 4. 构造返回 URL
-        file_url = f"https://{config['oss_bucket_name']}.{config['oss_endpoint']}/{unique_filename}"
+        file_url = f"https://{config['oss_bucket_name']}.{config['oss_endpoint']}/{oss_key}"
         
         return {
             "original_name": file.filename,
-            "oss_filename": unique_filename, 
+            "oss_filename": oss_key, 
             "url": file_url
         }
     except oss2.exceptions.AccessDenied as e:
@@ -193,6 +195,8 @@ async def get_presigned_upload_url(filename: str = None):
     else:
         ext = ''
     unique_filename = f"{uuid.uuid4().hex}.{ext}"
+    # 文件存储在 public/ 文件夹下
+    oss_key = f"public/{unique_filename}"
 
     try:
         # 生成预签名 URL，有效期 5 分钟（300 秒）
@@ -200,13 +204,13 @@ async def get_presigned_upload_url(filename: str = None):
         presigned_url = await asyncio.to_thread(
             oss_bucket.sign_url,
             'PUT',
-            unique_filename,
+            oss_key,
             300  # 有效期（秒）
         )
 
         return {
             "upload_url": presigned_url,
-            "oss_filename": unique_filename,
+            "oss_filename": oss_key,
             "expires_in_seconds": 300
         }
     except Exception as e:
