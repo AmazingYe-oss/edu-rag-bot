@@ -192,9 +192,7 @@ def upload_file_to_oss(file):
 # Gradio 界面构建（左右分栏）
 # ==========================================
 with gr.Blocks(
-    title="教育内容开发公司新员工答疑机器人",
-    css=custom_css,
-    theme=gr.themes.Soft()
+    title="教育内容开发公司新员工答疑机器人"
 ) as demo:
 
     # 全局状态
@@ -235,7 +233,6 @@ with gr.Blocks(
                 label="对话",
                 elem_id="chatbot",
                 height=600,
-                bubble_full_width=False,
                 avatar_images=(None, None)
             )
 
@@ -279,4 +276,9 @@ with gr.Blocks(
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        theme=gr.themes.Soft(),
+        css=custom_css
+    )
