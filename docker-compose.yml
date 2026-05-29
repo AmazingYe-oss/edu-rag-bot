@@ -1,43 +1,17 @@
 version: '3.8'
 
 services:
-
-  redis:
-    image: redis:7.0-alpine
-    container_name: rag-redis
-    ports:
-      - "6379:6379"
-    restart: unless-stopped
-    networks:
-      - rag-net
-  
-  chromadb:
-    image: chromadb/chroma:latest
-    container_name: rag-chromadb
-    ports:
-      - "8001:8000"
-    volumes:
-      - chroma_data:/chroma/chroma
-    restart: unless-stopped
-    networks:
-      - rag-net
-
   api:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: rag-api
-    command: uvicorn api:app --host 0.0.0.0 --port 8000
+    command: python api.py
     ports:
       - "8000:8000"
-    environment:
-      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
-      - CHROMA_HOST=chromadb
-      - CHROMA_PORT=8000
-    volumes:
-      - ./data:/app/data
-    depends_on:
-      - chromadb
+    # 🔥 师傅秘籍：用 env_file 替代手动写环境变量
+    env_file:
+      - .env
     restart: unless-stopped
     networks:
       - rag-net
@@ -47,25 +21,19 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: rag-ui
-    
     command: python ui.py
     ports:
       - "7860:7860"
     environment:
-      
-      - API_URL=http://api:8000
+      - API_URL=http://api:8000/api/chat
+      - UPLOAD_URL=http://api:8000/api/upload
     depends_on:
       - api
     restart: unless-stopped
     networks:
       - rag-net
 
-
 networks:
   rag-net:
     driver: bridge
 
-
-volumes:
-  chroma_data:
-    driver: local

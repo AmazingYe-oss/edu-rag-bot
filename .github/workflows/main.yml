@@ -20,12 +20,10 @@ jobs:
       - name: Checkout application code
         uses: actions/checkout@v4
 
-      # 【核心逃生舱 1】不依赖任何下载插件，直接用原生命令登录阿里云！
       - name: Login to ACR (Raw Shell)
         run: |
           echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.ACR_REGISTRY }} -u "${{ secrets.ACR_USERNAME }}" --password-stdin
 
-      # 【核心逃生舱 2】直接用原生命令打包镜像！没有任何中间商赚差价！
       - name: Build Docker image locally (Raw Shell)
         run: |
           docker build \
