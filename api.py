@@ -44,6 +44,7 @@ async def lifespan(app: FastAPI):
 
     # 初始化 OSS
     if config.get("oss_access_key_id") and config.get("oss_access_key_secret"):
+        print(f"[Startup] OSS 配置: endpoint={config.get('oss_endpoint')}, bucket={config.get('oss_bucket_name')}")
         auth = oss2.Auth(config["oss_access_key_id"], config["oss_access_key_secret"])
         oss_bucket = oss2.Bucket(auth, config["oss_endpoint"], config["oss_bucket_name"])
         print("[Startup] 🚀 阿里云 OSS 初始化成功")
