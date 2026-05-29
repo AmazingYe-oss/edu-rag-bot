@@ -1,50 +1,272 @@
-# RAG-Cloud-Native-Practice (大模型 RAG 云原生高阶架构实践)
-![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)
-![FastAPI](https://img.shields.io/badge/FastAPI-Microservice-009688?logo=fastapi)
+# Edu RAG Bot — 教育知识库智能问答系统
+
+![Python](https://img.shields.io/badge/Python-3.10-blue?logo=python)
+![FastAPI](https://img.shields.io/badge/FastAPI-v5.0-009688?logo=fastapi)
+![Gradio](https://img.shields.io/badge/Gradio-UI-orange?logo=gradio)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-Ready-blue?logo=kubernetes)
-![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_Database-orange)
-![Prometheus](https://img.shields.io/badge/Prometheus-Observability-e6522c?logo=prometheus)
-![Grafana](https://img.shields.io/badge/Grafana-Dashboard-F46800?logo=grafana)
+![DashVector](https://img.shields.io/badge/DashVector-Serverless_向量数据库-00c4b4)
+![Redis](https://img.shields.io/badge/Redis-会话缓存_&_限流-dc382d?logo=redis)
+![OSS](https://img.shields.io/badge/OSS-对象存储-blue?logo=alibabacloud)
 ![Terraform](https://img.shields.io/badge/Terraform-IaC-purple?logo=terraform)
-![GitOps](https://img.shields.io/badge/GitOps-ArgoCD-orange?logo=argo)
 ![CI/CD](https://img.shields.io/badge/CI-GitHub_Actions-green?logo=github-actions)
 
-## 项目简介 (Overview)
+## 项目简介
 
-本项目是一个面向生产级交付标准的大模型 RAG（Retrieval-Augmented Generation，检索增强生成）云原生工程化实践项目。
+本项目是一个面向教育场景的 **RAG（检索增强生成） 智能问答系统**，服务于企业内部新员工培训与知识管理。
 
-项目从一个本地运行的 RAG 脚本起步，逐步完成容器化、微服务拆分、CI/CD 自动化、GitOps 持续交付、Ingress 七层流量治理、Prometheus + Grafana 可观测性建设，以及 ChromaDB 向量数据库持久化改造，最终构建出一个基于 Kubernetes 的企业级 AI 应用交付体系。
+系统基于 **LlamaIndex + 通义千问（DashScope）** 构建 RAG 检索链路，使用**阿里云 DashVector** 作为 Serverless 向量数据库，**阿里云 Redis** 提供会话记忆与 API 限流，**阿里云 OSS** 实现文档云端存储，前端采用 **Gradio** 交互式界面，后端采用 **FastAPI** 微服务架构，支持 **SSE 流式打字机输出**，并通过 **Docker + Kubernetes + GitHub Actions + GitOps** 实现云原生交付。
 
-> 核心设计理念：跨越 AI Demo 与生产级 AI 应用之间的工程鸿沟，重点解决 AI 应用在云原生环境中的交付、伸缩、观测、持久化和自动化运维问题。
+> 核心定位：将企业内部的制度文档、开发规范、课程资料等非结构化知识，转化为可即时检索、智能问答的 AI 知识库助手。
 
 ---
 
-## 系统拓扑架构 (Architecture Topology)
-
-本项目在 Kubernetes 中实现了计算与存储分离、前后端解耦、七层流量接入以及全链路可观测。
+## 系统架构
 
 ```mermaid
 flowchart LR
-    Client["User Browser"]
-    Ingress["Nginx Ingress Controller"]
-    UI["Frontend Pod - Gradio UI"]
-    API["Backend Pod - FastAPI API"]
-    ChromaDB["ChromaDB Vector Database"]
-    PVC["PersistentVolumeClaim"]
-    LLM["Aliyun DashScope LLM"]
-    Prometheus["Prometheus ServiceMonitor"]
-    Grafana["Grafana Dashboard"]
+    Client["用户浏览器 (Gradio)"]
+    API["FastAPI 后端"]
+    DashVector["阿里云 DashVector (Serverless 向量库)"]
+    Redis["阿里云 Redis (会话缓存 & 限流)"]
+    OSS["阿里云 OSS (文件存储)"]
+    LLM["阿里云 DashScope (通义千问)"]
 
-    Client --> Ingress
-    Ingress --> UI
-    UI --> API
-    API --> ChromaDB
-    ChromaDB --> PVC
+    Client --> API
+    API --> DashVector
+    API --> Redis
+    API --> OSS
     API --> LLM
-    Prometheus --> API
-    Grafana --> Prometheus
 ```
+
+### 核心数据流
+
+1. 用户在 Gradio 前端输入问题
+2. FastAPI 后端接收请求，先查询 **Redis 缓存**（命中则直接返回，零 LLM 调用费用）
+3. 未命中缓存时，从 **Redis** 提取该会话的短期历史记忆，拼接上下文
+4. 调用 **DashVector** 进行向量语义检索，获取相关知识片段
+5. 将检索上下文 + 历史记忆组装 Prompt，调用 **DashScope 通义千问** 大模型
+6. 通过 **SSE (Server-Sent Events)** 流式返回打字机效果
+7. 回答完成后写入 Redis 缓存（TTL 1小时）并保存会话记忆（TTL 24小时）
+
+---
+
+## 核心特性
+
+### RAG 检索引擎
+- **LlamaIndex** 编排框架：文档加载 → 向量化 → 索引构建 → 语义检索 → Prompt 组装 → 大模型调用
+- **DashScope Embedding**（text-embedding-v3）：将文档切片转化为 1536 维向量
+- **DashScope LLM**（qwen-plus）：基于检索上下文生成精准回答
+- 支持多种文档格式：TXT、Markdown、PDF、DOCX、Jupyter Notebook
+
+### SSE 流式输出
+- 基于 `stream_chat` 实现逐字打字机效果，用户体验更佳
+- 前端通过 SSE 实时渲染，同时展示检索溯源上下文
+
+### 会话记忆管理
+- **Redis List** 存储短期对话历史（每个 session 独立，默认保留最近 3 轮）
+- 自动拼接历史上下文，实现多轮连贯对话
+- 会话数据 24 小时自动过期清理
+
+### 智能缓存与限流
+- **Redis 语义缓存**：相同问题精确匹配缓存，1 小时内重复查询零 LLM 调用成本
+- **API 限流保护**：基于 Redis + FastAPI-Limiter，单接口每分钟最多 5 次请求
+
+### 文件上传 (OSS)
+- 支持将文档上传至阿里云 OSS，实现知识库文档的云端存储
+- 支持服务端上传与预签名 URL 直传两种模式
+
+### 可观测性
+- 集成 **prometheus-fastapi-instrumentator**，自动暴露 `/metrics` 端点
+- 支持 QPS、请求延迟、错误率等接口指标采集
+
+---
+
+## 技术栈
+
+| 层级 | 技术选型 |
+|------|---------|
+| AI 框架 | LlamaIndex, DashScope API (通义千问 + text-embedding-v3) |
+| 后端 | FastAPI, Uvicorn, SSE Streaming |
+| 前端 | Gradio (Soft 主题，自适应暗色/亮色) |
+| 向量数据库 | 阿里云 DashVector (Serverless) |
+| 缓存 & 限流 | 阿里云 Redis, FastAPI-Limiter |
+| 对象存储 | 阿里云 OSS (oss2 SDK) |
+| 容器化 | Docker (多阶段构建), Docker Compose |
+| 编排 & 部署 | Kubernetes, Terraform (IaC), Nginx Ingress |
+| CI/CD | GitHub Actions → 阿里云 ACR → GitOps 双仓模式 |
+| 可观测性 | Prometheus (fastapi-instrumentator) |
+
+---
+
+## 快速开始
+
+### 前置条件
+
+- Python 3.10+
+- 阿里云 DashScope API Key（[申请地址](https://dashscope.console.aliyun.com/)）
+- 阿里云 DashVector 实例（[开通地址](https://dashvector.console.aliyun.com/)）
+- 阿里云 Redis 实例（可选，本地可用 Redis 替代）
+- 阿里云 OSS Bucket（可选，不配置则文件上传功能不可用）
+
+### 方式一：本地运行（开发调试）
+
+1. 克隆仓库：
+```bash
+git clone https://github.com/AmazingYe-oss/edu-rag-bot.git
+cd edu-rag-bot
+```
+
+2. 安装依赖：
+```bash
+pip install -r requirements.txt
+```
+
+3. 配置环境变量（复制模板并填入真实密钥）：
+```bash
+cp .env.example .env
+# 编辑 .env 文件，填入以下必填项：
+# - DASHSCOPE_API_KEY      (必填，大模型调用)
+# - DASHVECTOR_API_KEY     (必填，向量数据库)
+# - DASHVECTOR_ENDPOINT    (必填，向量数据库)
+# - REDIS_HOST / PASSWORD  (推荐，会话缓存)
+# - OSS_ACCESS_KEY_ID 等   (可选，文件上传)
+```
+
+4. 启动后端与前端：
+```bash
+# 终端 1：启动后端 API
+python api.py
+
+# 终端 2：启动前端 UI
+python ui.py
+```
+
+5. 访问：
+- 前端界面：`http://localhost:7860`
+- 后端 API 文档：`http://localhost:8000/docs`
+
+### 方式二：Docker Compose 一键启动
+
+```bash
+# 确保 .env 文件已配置好
+docker-compose up -d --build
+```
+
+访问地址同上：
+- 前端：`http://localhost:7860`
+- 后端：`http://localhost:8000/docs`
+
+### 方式三：Kubernetes 云原生部署
+
+#### 步骤 0：集群基础环境预置
+
+> 全新集群必须先安装以下组件：
+
+1. **安装 NGINX Ingress Controller**：
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/cloud/deploy.yaml
+```
+
+2. **安装 Prometheus Operator**（用于 ServiceMonitor 监控 CRD）：
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+helm install prometheus-operator prometheus-community/kube-prometheus-stack -n edu-rag-bot --create-namespace
+```
+
+#### 步骤 1：注入机密凭证
+
+```bash
+kubectl create namespace edu-rag-bot
+kubectl create secret generic edu-rag-bot-secret \
+  --namespace edu-rag-bot \
+  --from-literal=DASHSCOPE_API_KEY="你的通义千问Key" \
+  --from-literal=OSS_ACCESS_KEY_ID="你的OSS子账号AK" \
+  --from-literal=OSS_ACCESS_KEY_SECRET="你的OSS子账号SK" \
+  --from-literal=OSS_ENDPOINT="oss-cn-shanghai.aliyuncs.com" \
+  --from-literal=OSS_BUCKET_NAME="你的真实桶名" \
+  --from-literal=REDIS_HOST="你的阿里云Redis地址" \
+  --from-literal=REDIS_PASSWORD="你的Redis密码" \
+  --from-literal=DASHVECTOR_API_KEY="你的DashVector密钥" \
+  --from-literal=DASHVECTOR_ENDPOINT="你的DashVector地址"
+
+```
+
+> Secret 命名必须为 `edu-rag-bot-secret`，否则后端无法读取配置。
+
+#### 步骤 2：部署应用
+
+**选项 A：Kustomize 部署**
+```bash
+kubectl apply -k https://github.com/AmazingYe-oss/edu-rag-bot-gitops.git/apps/edu-rag-bot
+```
+
+**选项 B：ArgoCD GitOps 纳管**
+```bash
+kubectl apply -f https://raw.githubusercontent.com/AmazingYe-oss/edu-rag-bot-gitops/main/edu-rag-bot-application.yaml
+```
+
+#### 步骤 3：验证与访问
+
+```bash
+kubectl get pods -n edu-rag-bot -w
+```
+
+**通过 Ingress 域名访问**（推荐）：
+1. 在 hosts 文件中添加：`127.0.0.1 rag.weiye.local`
+2. 浏览器访问：http://rag.weiye.local
+
+**通过端口转发访问**（备用）：
+```bash
+kubectl port-forward deployment/rag-frontend 7860:7860 -n edu-rag-bot
+```
+浏览器访问：http://localhost:7860
+
+---
+
+## 环境变量说明
+
+| 变量名 | 必填 | 说明 |
+|--------|------|------|
+| `DASHSCOPE_API_KEY` | ✅ | 阿里云通义千问大模型 API Key |
+| `DASHVECTOR_API_KEY` | ✅ | 阿里云 DashVector 向量数据库 API Key |
+| `DASHVECTOR_ENDPOINT` | ✅ | 阿里云 DashVector 服务端点 |
+| `DASHSCOPE_LLM_MODEL` | ❌ | LLM 模型名，默认 `qwen-plus` |
+| `DASHSCOPE_EMBED_MODEL` | ❌ | Embedding 模型名，默认 `text-embedding-v3` |
+| `REDIS_HOST` | 推荐 | Redis 地址，默认 `127.0.0.1` |
+| `REDIS_PORT` | 推荐 | Redis 端口，默认 `6379` |
+| `REDIS_PASSWORD` | 推荐 | Redis 密码 |
+| `OSS_ACCESS_KEY_ID` | 可选 | 阿里云 OSS AccessKey ID |
+| `OSS_ACCESS_KEY_SECRET` | 可选 | 阿里云 OSS AccessKey Secret |
+| `OSS_ENDPOINT` | 可选 | 阿里云 OSS Endpoint |
+| `OSS_BUCKET_NAME` | 可选 | 阿里云 OSS Bucket 名称 |
+| `SIMILARITY_TOP_K` | 可选 | 检索返回 Top-K 数量，默认 `3` |
+| `DATA_DIR` | 可选 | 本地知识库文档目录，默认 `data` |
+
+---
+
+## 项目目录结构
+
+```text
+├── .github/workflows/       # GitHub Actions CI/CD 流水线
+├── src/                     # 核心业务逻辑
+│   ├── config.py            # 环境变量配置加载
+│   ├── rag_service.py       # RAG 检索引擎 (DashVector + DashScope)
+│   ├── memory_manager.py    # Redis 会话记忆管理
+│   ├── document_loader.py   # 多格式文档加载器 (PDF/DOCX/TXT/MD/IPYNB)
+│   └── prompts.py           # System Prompt 模板
+├── api.py                   # FastAPI 后端 (SSE 流式 + 限流 + OSS 上传)
+├── ui.py                    # Gradio 前端交互界面
+├── Dockerfile               # 多阶段构建镜像文件
+├── docker-compose.yml       # 本地容器编排
+├── requirements.txt         # Python 依赖清单
+├── main.tf                  # Terraform IaC 基础设施声明
+├── .env.example             # 环境变量配置模板
+└── .env                     # 实际环境变量 (不入 Git)
+```
+
+> Kubernetes GitOps 配置（Deployment、Ingress、StatefulSet、ServiceMonitor 等）维护在独立仓库 [edu-rag-bot-gitops](https://github.com/AmazingYe-oss/edu-rag-bot-gitops) 中。
 
 ---
 
@@ -86,205 +308,36 @@ flowchart LR
 
 ---
 
-## 核心工程化演进 (Key Engineering Highlights)
+## 常见问题
 
-本项目经历了三次重大架构演进，实现了从本地 AI Demo 到云原生 AI 应用的完整升级。
+**Q: 后端启动报 `DASHVECTOR_API_KEY` 未配置？**
+A: 确保 `.env` 文件或 K8s Secret 中已正确配置 `DASHVECTOR_API_KEY` 和 `DASHVECTOR_ENDPOINT`。
 
-### V1.0: 基础设施即代码 (IaC) 与 CI/CD 飞轮
+**Q: Redis 连接失败？**
+A: 检查 `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` 是否正确。本地开发可启动一个本地 Redis 实例。
 
-- **Terraform 自动化编排**：抛弃手工点击控制台，使用 main.tf 声明式管理底层云资源。
-- **Docker 容器化改造**：将本地 RAG 应用封装为标准容器镜像，实现环境一致性和可移植交付。
-- **GitHub Actions 自动化流水线**：代码 Push 后自动完成构建、扫描、推送和配置更新。
-- **Trivy 安全左移扫描**：在镜像推送前执行漏洞扫描，对 CRITICAL 和 HIGH 级别漏洞进行阻断。
-- **双仓 GitOps 模式**：业务代码仓与 Kubernetes Manifests 配置仓分离，职责边界清晰。
-- **ArgoCD Pull-based Delivery**：通过 ArgoCD 拉取 GitOps 仓库状态并同步到集群，避免 CI 系统直接持有集群高权限凭证。
+**Q: 后端 Pod 状态为 `CreateContainerConfigError`？**
+A: 通常是 Secret 命名不是 `edu-rag-bot-secret` 或缺少必要的环境变量。使用 `kubectl describe pod` 查看 Events。
 
-### V2.0: 微服务拆分与全链路可观测性 (Observability)
+**Q: 部署时提示 `no matches for kind "ServiceMonitor"`？**
+A: 集群缺失 Prometheus CRD。执行步骤 0 安装 kube-prometheus-stack。
 
-- **前后端解耦**：将单体 app.py 拆分为前端 ui.py 与后端 api.py。
-- **FastAPI 后端算力层**：后端服务专注于 RAG 检索、向量查询和大模型调用。
-- **Gradio 前端展示层**：前端服务专注于用户交互和问答展示。
-- **独立横向扩缩容**：前后端可根据访问压力和算力压力分别扩容。
-- **Nginx Ingress 七层路由**：通过 Ingress 统一接管外部访问入口，替代简单 NodePort 暴露方式。
-- **Prometheus + Grafana 可观测体系**：通过业务指标埋点和 ServiceMonitor 实现接口 QPS、请求延迟、错误率等指标采集。
-- **SRE 监控闭环**：通过 Grafana Dashboard 实现服务运行状态可视化，为后续容量规划和故障排查打基础。
-
-### V3.0: 状态剥离与持久化大脑 (Stateful Persistence)
-
-- **计算与存储分离**：将向量索引从本地文件系统剥离，迁移到 ChromaDB 向量数据库。
-- **ChromaDB 向量数据库**：用于存储 RAG 知识库 Embedding 数据，支撑语义检索能力。
-- **StatefulSet 部署有状态服务**：使用 Kubernetes StatefulSet 管理 ChromaDB，保证服务身份稳定。
-- **PVC 持久化存储**：通过 PersistentVolumeClaim 挂载持久化存储，避免 Pod 重建导致知识库数据丢失。
-- **知识库快速恢复**：服务重启后可直接加载已有向量数据，减少重复 Embedding 成本。
+**Q: OSS 上传返回 503？**
+A: 未配置 OSS 环境变量，或 AccessKey 权限不足。
 
 ---
 
-## 技术栈 (Tech Stack)
+## 适用场景
 
-### AI 应用层
-- Python 3.11, LlamaIndex, FastAPI, Gradio, DashScope API
-### 容器化与编排
-- Docker, Docker Compose, Kubernetes, Kustomize, Nginx Ingress Controller
-### 有状态存储
-- ChromaDB, StatefulSet, PersistentVolumeClaim
-### CI/CD 与 GitOps
-- GitHub Actions, 阿里云 ACR, ArgoCD, GitOps 双仓模式
-### 可观测性与 SRE
-- Prometheus, Grafana, kube-prometheus-stack, ServiceMonitor
-### 基础设施即代码
-- Terraform, HCL
-
----
-
-## 快速开始 (Quick Start)
-
-本项目提供本地容器化快速联调与 Kubernetes 集群原生部署两种运行方式。
-请确保在运行前已获取大模型 API 凭证（以阿里云 DashScope 为例）。
-
-### 方式一：本地 Docker Compose 运行 (推荐开发调试)
-无需 K8s 集群，在本地即可一键拉起前后端双微服务与 ChromaDB 数据库。
-
-1. 克隆业务源码仓库：
-```bash
-git clone https://github.com/AmazingYe-oss/edu-rag-bot.git
-cd edu-rag-bot
-```
-
-2. 注入大模型 API 凭证并启动：
-```bash
-export DASHSCOPE_API_KEY="sk-your-api-key-here"
-docker-compose up -d --build
-```
-
-3. 访问浏览器体验：
-- 前端交互界面 (UI): `http://localhost:7860`
-- 后端接口文档 (API): `http://localhost:8000/docs`
-
-### 方式二：Kubernetes 原生部署 (推荐生产验证)
-
-配合 GitOps 配置仓库，在 K8s 集群中实现包含网关、探针、持久化存储及监控在内的完整云原生部署。
-
-#### 步骤 0：集群基础环境预置（必做项）
-> **避坑提示**：如果是全新安装的 K8s（或重置了 Docker Desktop），**必须**先安装基础组件，否则会导致后续部署报错或持续卡在 `Progressing` 状态。
-
-1. **安装 NGINX Ingress 网关**（用于接收外部网页请求）：
-```bash
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/cloud/deploy.yaml
-```
-
-2. **安装 Prometheus Operator**（提供 ServiceMonitor 等监控 CRD 资源）：
-```bash
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
-helm install prometheus-operator prometheus-community/kube-prometheus-stack -n edu-rag-bot --create-namespace
-```
-
-#### 步骤 1：注入机密凭证 (Secret)
-由于安全原因，API Key 不应硬编码在 Git 仓库中。请**先创建命名空间**，并手动注入大模型 API 密钥（注意：**Secret 命名必须严格为 `edu-rag-bot-secret`**，否则后端容器将因读取不到配置而无法启动）：
-```bash
-kubectl create namespace edu-rag-bot
-kubectl create secret generic edu-rag-bot-secret \
-  --from-literal=DASHSCOPE_API_KEY="sk-这里填你真实的Key" \
-  -n edu-rag-bot
-```
-
-#### 步骤 2：一键应用资源清单
-你可以选择以下两种方式之一部署核心业务代码：
-
-*   **选项 A：使用 Kustomize 声明式部署（常规方式）**
-```bash
-kubectl apply -k https://github.com/AmazingYe-oss/edu-rag-bot-gitops.git/apps/edu-rag-bot
-```
-
-*   **选项 B：接入 ArgoCD GitOps 纳管（进阶推荐）**
-若集群已安装 ArgoCD，可直接应用 Application 资源，开启自动化同步流水线：
-```bash
-kubectl apply -f https://raw.githubusercontent.com/AmazingYe-oss/edu-rag-bot-gitops/main/edu-rag-bot-application.yaml
-```
-
-#### 步骤 3：验证与访问
-部署完成后，观察所有 Pod 是否进入 `Running` 状态：
-```bash
-kubectl get pods -n edu-rag-bot -w
-```
-
-待全部就绪后，系统提供了**两种**访问方式供本地测试使用：
-
-**访问方式一：通过 Ingress 本地虚拟域名访问（推荐，最贴近生产）**
-本项目 Ingress 配置的路由规则为 `rag.weiye.local`。需要在本机配置 hosts 域名劫持：
-1. 以管理员身份打开文件（Windows: `C:\Windows\System32\drivers\etc\hosts`，Mac/Linux: `/etc/hosts`）。
-2. 在文件末尾添加以下映射并保存：
-   `127.0.0.1 rag.weiye.local`
-3. 打开浏览器，直接访问：http://rag.weiye.local
-
-**访问方式二：物理端口转发访问（备用方案）**
-若 Ingress 暂未生效，或不想修改系统 hosts 文件，可使用原生端口转发直连前端容器：
-1. 在终端执行以下命令（保持窗口开启不要关闭）：
-```bash
-kubectl port-forward deployment/rag-frontend 7860:7860 -n edu-rag-bot
-```
-2. 打开浏览器访问：http://localhost:7860
-
----
-
-#### 常见故障排查 (Troubleshooting)
-
-*   **Q: 后端 Pod 状态为 `CreateContainerConfigError`？**
-    *   **A**: 通常是因为忘记执行【步骤 1】注入 API Key，或者 Secret 命名不是 `edu-rag-bot-secret`。可通过 `kubectl describe pod <pod-name> -n edu-rag-bot` 查看底部 Events 确认。
-
-*   **Q: 后端 Pod 报错 `KeyError: 'dimension'` 或 404 无法连接 ChromaDB？**
-    *   **A**: 典型的微服务版本漂移问题。请确保后端的 `chromadb` 依赖版本与 K8s 中部署的 ChromaDB 镜像版本一致（本项目要求统一为 **`0.5.3`**）。
-
-*   **Q: 部署时提示 `no matches for kind "ServiceMonitor"`？**
-    *   **A**: 集群中缺失 Prometheus 的 CRD 资源。请退回执行【步骤 0】安装 kube-prometheus-stack。
-
-*   **Q: ArgoCD 界面中 Ingress 资源一直处于黄色 `Progressing` 状态？**
-    *   **A**: 集群未安装 Ingress Controller，导致流量图纸无法被解析分发。执行【步骤 0】安装 NGINX Ingress 即可修复。
-
----
-
-## 核心代码目录结构 (Repository Structure)
-
-```text
-├── .github/workflows/       # GitHub Actions CI 自动化流水线
-├── data/                    # RAG 知识库初始文档
-├── src/                     # RAG 核心逻辑实现
-├── api.py                   # FastAPI 后端微服务算力层
-├── ui.py                    # Gradio 前端展示层
-├── Dockerfile               # 微服务统一镜像构建文件
-├── docker-compose.yml       # 本地快速联调编排文件
-├── requirements.txt         # Python 核心依赖
-└── main.tf                  # Terraform IaC 基础设施代码
-```
-> 注：Kubernetes 集群的 GitOps 声明式配置（Deployment、Ingress、StatefulSet、ServiceMonitor 等）维护在独立的 GitOps 配置仓库中。
-
----
-
-## 项目亮点 (Project Highlights)
-
-- 从本地 RAG 脚本演进为 Kubernetes 上的云原生 AI 应用。
-- 使用 GitHub Actions、阿里云 ACR、ArgoCD 打通端到端自动化发布链路。
-- 引入 Trivy 安全扫描，在 CI 阶段实现容器镜像安全左移。
-- 使用双仓 GitOps 模式，实现业务代码与基础设施配置解耦。
-- 通过 Nginx Ingress 实现七层流量入口治理。
-- 通过 Prometheus + Grafana 构建基础 SRE 可观测能力。
-- 通过 ChromaDB + StatefulSet + PVC 实现知识库向量数据持久化。
-- 覆盖 AI 工程化、DevOps、SRE、Kubernetes、GitOps、IaC 等多个生产级技术域。
-
----
-
-## 适用场景 (Use Cases)
-
-本项目适用于以下场景：
-- 企业内部知识库问答系统
+- 企业内部知识库智能问答
+- 新员工入职培训自助答疑
+- 教育内容开发规范查询
 - 云原生 AI 应用工程化实践
-- Kubernetes 上的 RAG 服务部署
 - AI 应用 CI/CD 与 GitOps 交付演示
-- 云计算、DevOps、SRE、解决方案架构师岗位作品集项目
 
 ---
 
-## 作者 (Author)
+## 作者
 
 **朱玮烨 (AmazingYe)**
 - 2027届 数据科学与大数据技术
