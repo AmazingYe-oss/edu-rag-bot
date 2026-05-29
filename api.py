@@ -1,61 +1,126 @@
-from fastapi import FastAPI, HTTPException,Depends
-from pydantic import BaseModel
-from src.config import load_config
-from src.rag_service import RAGService
+import os
+import json
+import hashlib
 import traceback
-from prometheus_fastapi_instrumentator import Instrumentator
-import chromadb
-from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.core import StorageContext
-import redis.asyncio as redis
+from contextlib import asynccontextmanager
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+import redis.asyncio as aioredis
 from fastapi_limiter import FastAPILimiter
 from fastapi_limiter.depends import RateLimiter
-import os
-from contextlib import asynccontextmanager
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+from prometheus_fastapi_instrumentator import Instrumentator
 
+from src.config import load_config
+from src.rag_service import RAGService
+from src.memory_manager import RedisMemoryManager
+
+# 全局初始化
+memory_manager = RedisMemoryManager()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print(f"[Startup] 正在连接 Redis: {REDIS_URL}")
-    redis_conn = redis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
-    
+    print("[Startup] 正在连接阿里云 Redis (异步限流器)...")
+    redis_conn = aioredis.Redis(
+        host=os.getenv("REDIS_HOST", "127.0.0.1"),
+        port=int(os.getenv("REDIS_PORT", 6379)),
+        password=os.getenv("REDIS_PASSWORD", None),
+        db=0,
+        encoding="utf-8",
+        decode_responses=True
+    )
     await FastAPILimiter.init(redis_conn)
-    print("[Startup] Redis 与限流器初始化成功")
-    
-    yield  
-    
+    print("[Startup] 🚀 阿里云 Redis 与频控限流器初始化成功")
+    yield
     print("[Shutdown] 正在关闭 Redis 连接...")
     await redis_conn.close()
 
 config = load_config()
-rag_service=RAGService(config)
+rag_service = RAGService(config)
 
 app = FastAPI(
     title="Edu RAG Backend API",
-    description="教育大模型问答系统后端接口",
+    description="教育大模型问答系统后端接口 (SSE流式 + Redis缓存 完全体)",
     lifespan=lifespan,
-    version="1.0.0"
+    version="5.0.0"
 )
 
 Instrumentator().instrument(app).expose(app)
-class ChatRequest(BaseModel):
-    question:str
 
-class ChatResponse(BaseModel):
-    answer:str
-    context:str
-@app.post("/api/chat", response_model=ChatResponse,dependencies=[Depends(RateLimiter(times=5, seconds=60))])
-def chat_endpoint(request:ChatRequest):
-    try:
-        answer, context = rag_service.ask(request.question)
-        return ChatResponse(answer=answer, context=context)
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+class ChatRequest(BaseModel):
+    question: str
+    session_id: str = "default_session"
+
+def generate_cache_key(question: str) -> str:
+    """生成问题专属的 Redis 缓存指纹 (MD5)"""
+    return "rag:cache:" + hashlib.md5(question.encode("utf-8")).hexdigest()
+
+# 核心问答接口 (改为返回 StreamingResponse)
+@app.post("/api/chat", dependencies=[Depends(RateLimiter(times=5, seconds=60))])
+async def chat_endpoint(request: ChatRequest):
+    question = request.question.strip()
+    session_id = request.session_id
     
+    # ==========================================
+    # 🧱 第 1 道防线：Redis 精确缓存拦截 (省钱省时)
+    # ==========================================
+    cache_key = generate_cache_key(question)
+    cached_answer = memory_manager.redis_client.get(cache_key)
+    
+    if cached_answer:
+        # 如果命中缓存，伪装成流式输出，瞬间吐出答案
+        def cache_stream():
+            payload = {"delta": cached_answer, "context": "⚡ 命中 Redis 阿里云缓存，本次查询零费用！"}
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        return StreamingResponse(cache_stream(), media_type="text/event-stream")
+
+    # ==========================================
+    # 🧠 第 2 步：提取短期历史记忆
+    # ==========================================
+    history = memory_manager.get_history(session_id)
+    if history:
+        history_lines = [f"{msg['role']}: {msg['content']}" for msg in history]
+        full_question = "【前情提要：历史对话】\n" + "\n".join(history_lines) + "\n\n【新问题】\n" + question
+    else:
+        full_question = question
+
+    # ==========================================
+    # 🌊 第 3 步：定义 SSE 流式打字机生成器
+    # ==========================================
+    def event_generator():
+        try:
+            # 调用新增的流式入口
+            response_gen, retrieved_context = rag_service.stream_ask(full_question)
+            full_answer = ""
+            
+            # 实时捕获大模型吐出的每一个字，并通过 yield 抛给前端
+            for chunk in response_gen:
+                delta = chunk.delta
+                if delta:
+                    full_answer += delta
+                    # 标准的 Server-Sent Events 格式: data: {...}\n\n
+                    payload = {"delta": delta, "context": retrieved_context}
+                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            
+            # 📝 对话全部生成完毕后，写入记忆和缓存
+            if full_answer:
+                # 存入对话上下文
+                memory_manager.add_message(session_id, "user", question)
+                memory_manager.add_message(session_id, "assistant", full_answer)
+                # 存入全局缓存 (有效期 1 小时，下次有人问同样问题直接白嫖)
+                memory_manager.redis_client.setex(cache_key, 3600, full_answer)
+                
+        except Exception as e:
+            traceback.print_exc()
+            yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+
+    # 返回流式响应体
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-    
