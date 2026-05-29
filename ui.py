@@ -7,7 +7,7 @@ import gradio as gr
 API_URL = os.getenv("API_URL", "http://localhost:8000/api/chat")
 UPLOAD_URL = os.getenv("UPLOAD_URL", "http://localhost:8000/api/upload")
 
-# 极简 CSS：绝对不写死颜色！全靠 Gradio 自身的变量自适应
+
 custom_css = """
 footer {display: none !important;}
 /* 让输入区像一个精致的圆角对话框 */
@@ -22,7 +22,6 @@ footer {display: none !important;}
 def user_submit(user_message, history):
     if not user_message.strip():
         return "", history
-    # 6.0 唯一指定的字典格式
     history.append({"role": "user", "content": user_message})
     return "", history
 
@@ -31,16 +30,13 @@ def answer_question(history, session_id):
         yield history, ""
         return
 
-    # 🔪 核心修复：剥开 Gradio 6.0 的多模态“马甲”，提取纯文本
+
     raw_content = history[-1]["content"]
     if isinstance(raw_content, list) and len(raw_content) > 0 and isinstance(raw_content[0], dict):
-        # 如果是 [{'text': '我是谁', 'type': 'text'}] 这种格式，提取 'text'
         question = raw_content[0].get("text", "")
     else:
-        # 如果它乖乖的是字符串，直接转字符串
         question = str(raw_content)
 
-    # 组装给后端的 Payload，此时 question 已经是纯正的 "我是谁" 了
     req_payload = {"question": question, "session_id": session_id}
 
     history.append({"role": "assistant", "content": ""})
@@ -85,18 +81,17 @@ def upload_file_to_oss(file):
     except Exception as e:
         return f"❌ 上传失败：{str(e)}"
 
-# 选用清爽的 Soft 靛蓝色主题
+
 theme = gr.themes.Soft(
     primary_hue="indigo",
     neutral_hue="slate"
 )
 
-# ⚠️ 修复 1：把 css 和 theme 从这里去掉了
+
 with gr.Blocks(title="AI 知识库助手", fill_height=True) as demo:
     session_state = gr.State(lambda: str(uuid.uuid4()))
 
     with gr.Row(equal_height=True):
-        # ========== 左侧边栏 ==========
         with gr.Column(scale=1, min_width=260, variant="panel"):
             gr.Markdown("""
             ### 🎓 知识库助手
@@ -113,16 +108,13 @@ with gr.Blocks(title="AI 知识库助手", fill_height=True) as demo:
                 
             upload_button.click(fn=upload_file_to_oss, inputs=file_input, outputs=upload_result)
 
-        # ========== 右侧主舞台 ==========
         with gr.Column(scale=4):
-            # ⚠️ 修复 2：去掉了报错的 type 参数
             chatbot = gr.Chatbot(
                 show_label=False,
                 scale=1, 
                 avatar_images=("👤", "🤖")
             )
 
-            # 输入区
             with gr.Row(elem_id="input-row"):
                 question_input = gr.Textbox(
                     show_label=False,
@@ -135,7 +127,6 @@ with gr.Blocks(title="AI 知识库助手", fill_height=True) as demo:
             with gr.Accordion("🔍 溯源追踪 (查看检索到的原始资料)", open=False):
                 context_output = gr.Textbox(show_label=False, lines=3, interactive=False, container=False)
 
-    # ========== 事件绑定 ==========
     send_button.click(
         fn=user_submit, 
         inputs=[question_input, chatbot], 
@@ -159,5 +150,4 @@ with gr.Blocks(title="AI 知识库助手", fill_height=True) as demo:
     )
 
 if __name__ == "__main__":
-    # ⚠️ 修复 3：按照 6.0 官方规范，把 theme 和 css 放在 launch 里！
     demo.launch(server_name="0.0.0.0", server_port=7860, theme=theme, css=custom_css)

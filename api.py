@@ -9,10 +9,8 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 import oss2
-# ⚠️ 引入了 Request 和 JSONResponse
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Request
 from fastapi.responses import StreamingResponse, JSONResponse
-# ⚠️ 引入错误拦截类
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel
 import redis.asyncio as aioredis
@@ -26,7 +24,6 @@ from src.config import load_config
 from src.rag_service import RAGService
 from src.memory_manager import RedisMemoryManager
 
-# 全局初始化
 memory_manager = RedisMemoryManager()
 oss_bucket = None
 
@@ -48,7 +45,7 @@ async def lifespan(app: FastAPI):
     print("当前程序拿到的 AK 是: ", config.get("oss_access_key_id"))
     print("======================")
 
-    # 初始化 OSS
+
     if config.get("oss_access_key_id") and config.get("oss_access_key_secret"):
         print(f"[Startup] OSS 配置: endpoint={config.get('oss_endpoint')}, bucket={config.get('oss_bucket_name')}")
         auth = oss2.Auth(config["oss_access_key_id"], config["oss_access_key_secret"])
@@ -73,9 +70,6 @@ app = FastAPI(
 
 Instrumentator().instrument(app).expose(app)
 
-# ==========================================
-# 🔍 核心武器：422 错误全局透视拦截器
-# ==========================================
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     print("\n" + "="*50)
@@ -96,15 +90,12 @@ def generate_cache_key(question: str) -> str:
     """生成问题专属的 Redis 缓存指纹 (MD5)"""
     return "rag:cache:" + hashlib.md5(question.encode("utf-8")).hexdigest()
 
-# 核心问答接口
+
 @app.post("/api/chat", dependencies=[Depends(RateLimiter(times=5, seconds=60))])
-async def chat_endpoint(request: Request, payload: ChatRequest): # ⚠️ 显式加上 request，把业务数据隔离到 payload
+async def chat_endpoint(request: Request, payload: ChatRequest):
     question = payload.question.strip()
     session_id = payload.session_id
 
-    # ==========================================
-    # 🧱 第 1 道防线：Redis 精确缓存拦截
-    # ==========================================
     cache_key = generate_cache_key(question)
     cached_answer = memory_manager.redis_client.get(cache_key)
 
@@ -114,9 +105,6 @@ async def chat_endpoint(request: Request, payload: ChatRequest): # ⚠️ 显式
             yield f"data: {json.dumps(payload_data, ensure_ascii=False)}\n\n"
         return StreamingResponse(cache_stream(), media_type="text/event-stream")
 
-    # ==========================================
-    # 🧠 第 2 步：提取短期历史记忆
-    # ==========================================
     history = memory_manager.get_history(session_id)
     if history:
         history_lines = [f"{msg['role']}: {msg['content']}" for msg in history]
@@ -124,9 +112,6 @@ async def chat_endpoint(request: Request, payload: ChatRequest): # ⚠️ 显式
     else:
         full_question = question
 
-    # ==========================================
-    # 🌊 第 3 步：定义 SSE 流式打字机生成器
-    # ==========================================
     def event_generator():
         try:
             response_gen, retrieved_context = rag_service.stream_ask(full_question)
