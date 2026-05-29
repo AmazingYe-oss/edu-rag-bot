@@ -178,6 +178,42 @@ async def upload_file(file: UploadFile = File(...)):
         print(f"[Upload Error] OSS endpoint: {config.get('oss_endpoint')}, bucket: {config.get('oss_bucket_name')}")
         raise HTTPException(status_code=500, detail=f"上传到 OSS 失败: {str(e)}")
 
+
+@app.post("/api/upload/presigned")
+async def get_presigned_upload_url(filename: str = None):
+    """
+    生成预签名上传 URL，用户可直接使用该 URL 上传文件到 OSS。
+    """
+    if oss_bucket is None:
+        raise HTTPException(status_code=503, detail="OSS 未配置，无法生成上传链接")
+
+    # 生成唯一文件名
+    if filename:
+        ext = filename.split('.')[-1] if '.' in filename else ''
+    else:
+        ext = ''
+    unique_filename = f"{uuid.uuid4().hex}.{ext}"
+
+    try:
+        # 生成预签名 URL，有效期 5 分钟（300 秒）
+        import asyncio
+        presigned_url = await asyncio.to_thread(
+            oss_bucket.sign_url,
+            'PUT',
+            unique_filename,
+            300  # 有效期（秒）
+        )
+
+        return {
+            "upload_url": presigned_url,
+            "oss_filename": unique_filename,
+            "expires_in_seconds": 300
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"生成预签名 URL 失败: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

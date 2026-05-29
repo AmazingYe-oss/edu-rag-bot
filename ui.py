@@ -58,21 +58,36 @@ def answer_question(question, session_id):
 
 def upload_file_to_oss(file):
     """
-    上传文件到阿里云 OSS
+    上传文件到阿里云 OSS（使用预签名 URL）
     """
     if file is None:
         return "请先选择文件。"
     
     try:
-        # 读取文件内容
+        # 1. 获取预签名上传 URL
+        presigned_response = requests.post(
+            f"{UPLOAD_URL}/presigned",
+            json={"filename": os.path.basename(file.name)},
+            timeout=30
+        )
+        presigned_response.raise_for_status()
+        presigned_data = presigned_response.json()
+        upload_url = presigned_data["upload_url"]
+        oss_filename = presigned_data["oss_filename"]
+        
+        # 2. 使用预签名 URL 上传文件
         with open(file.name, "rb") as f:
-            files = {"file": (os.path.basename(file.name), f, "application/octet-stream")}
-            response = requests.post(UPLOAD_URL, files=files, timeout=120)
-            response.raise_for_status()
-            result = response.json()
-            filename = result.get("filename", "未知")
-            url = result.get("url", "未知")
-            return f"✅ 上传成功！\n文件名：{filename}\nURL：{url}"
+            upload_response = requests.put(
+                upload_url,
+                data=f,
+                timeout=120
+            )
+            upload_response.raise_for_status()
+        
+        # 3. 构造可访问的 URL
+        file_url = f"https://{os.getenv('OSS_BUCKET_NAME', 'public')}.{os.getenv('OSS_ENDPOINT', 'oss-cn-shanghai.aliyuncs.com')}/{oss_filename}"
+        
+        return f"✅ 上传成功！\n文件名：{oss_filename}\nURL：{file_url}"
     except Exception as e:
         return f"❌ 上传失败：{str(e)}"
 
