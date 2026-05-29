@@ -12,6 +12,11 @@ def load_config():
         "data_dir": os.getenv("DATA_DIR", "data"),
         "persist_dir": os.getenv("PERSIST_DIR", "storage"),
         "similarity_top_k": int(os.getenv("SIMILARITY_TOP_K", "3")),
+        # OSS 配置
+        "oss_access_key_id": os.getenv("OSS_ACCESS_KEY_ID"),
+        "oss_access_key_secret": os.getenv("OSS_ACCESS_KEY_SECRET"),
+        "oss_endpoint": os.getenv("OSS_ENDPOINT"),
+        "oss_bucket_name": os.getenv("OSS_BUCKET_NAME"),
     }
 
     if not config["dashscope_api_key"]:

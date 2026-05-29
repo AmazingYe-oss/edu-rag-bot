@@ -2,12 +2,14 @@ import os
 import json
 import hashlib
 import traceback
+import time
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, Depends
+import oss2
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import redis.asyncio as aioredis
@@ -21,9 +23,11 @@ from src.memory_manager import RedisMemoryManager
 
 # 全局初始化
 memory_manager = RedisMemoryManager()
+oss_bucket = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global oss_bucket
     print("[Startup] 正在连接阿里云 Redis (异步限流器)...")
     redis_conn = aioredis.Redis(
         host=os.getenv("REDIS_HOST", "127.0.0.1"),
@@ -35,6 +39,15 @@ async def lifespan(app: FastAPI):
     )
     await FastAPILimiter.init(redis_conn)
     print("[Startup] 🚀 阿里云 Redis 与频控限流器初始化成功")
+
+    # 初始化 OSS
+    if config.get("oss_access_key_id") and config.get("oss_access_key_secret"):
+        auth = oss2.Auth(config["oss_access_key_id"], config["oss_access_key_secret"])
+        oss_bucket = oss2.Bucket(auth, config["oss_endpoint"], config["oss_bucket_name"])
+        print("[Startup] 🚀 阿里云 OSS 初始化成功")
+    else:
+        print("[Startup] ⚠️ 未配置 OSS，文件上传功能不可用")
+
     yield
     print("[Shutdown] 正在关闭 Redis 连接...")
     await redis_conn.close()
@@ -120,6 +133,25 @@ async def chat_endpoint(request: ChatRequest):
 
     # 返回流式响应体
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+# 文件上传接口
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    if oss_bucket is None:
+        raise HTTPException(status_code=503, detail="OSS 未配置，无法上传文件")
+
+    # 读取文件内容
+    content = await file.read()
+    # 生成唯一文件名（使用时间戳 + 原始文件名）
+    unique_filename = f"{int(time.time())}_{file.filename}"
+    # 上传到 OSS
+    try:
+        oss_bucket.put_object(unique_filename, content)
+        # 生成文件 URL（根据 endpoint 和 bucket 构造）
+        file_url = f"https://{config['oss_bucket_name']}.{config['oss_endpoint']}/{unique_filename}"
+        return {"filename": unique_filename, "url": file_url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"上传失败: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
