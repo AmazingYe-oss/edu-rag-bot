@@ -162,6 +162,14 @@ async def upload_file(file: UploadFile = File(...)):
             "oss_filename": unique_filename, 
             "url": file_url
         }
+    except oss2.exceptions.AccessDenied as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[Upload Error] OSS endpoint: {config.get('oss_endpoint')}, bucket: {config.get('oss_bucket_name')}")
+        raise HTTPException(
+            status_code=403,
+            detail="OSS 访问被拒绝，请检查 AccessKey 权限或 Bucket 权限设置。"
+        )
     except Exception as e:
         # 打印详细错误日志
         import traceback
