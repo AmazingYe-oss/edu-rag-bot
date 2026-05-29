@@ -16,6 +16,8 @@ import redis.asyncio as aioredis
 from fastapi_limiter import FastAPILimiter
 from fastapi_limiter.depends import RateLimiter
 from prometheus_fastapi_instrumentator import Instrumentator
+import uuid
+from fastapi.concurrency import run_in_threadpool
 
 from src.config import load_config
 from src.rag_service import RAGService
@@ -134,24 +136,31 @@ async def chat_endpoint(request: ChatRequest):
     # 返回流式响应体
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-# 文件上传接口
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
     if oss_bucket is None:
         raise HTTPException(status_code=503, detail="OSS 未配置，无法上传文件")
 
-    # 读取文件内容
-    content = await file.read()
-    # 生成唯一文件名（使用时间戳 + 原始文件名）
-    unique_filename = f"{int(time.time())}_{file.filename}"
-    # 上传到 OSS
+    # 1. 解决撞车：使用 UUID 生成绝对唯一的文件名
+    ext = file.filename.split('.')[-1] if '.' in file.filename else ''
+    unique_filename = f"{uuid.uuid4().hex}.{ext}"
+
     try:
-        oss_bucket.put_object(unique_filename, content)
-        # 生成文件 URL（根据 endpoint 和 bucket 构造）
+        # 2. 解决 OOM 与 卡死：
+        # - file.file 是 FastAPI 底层的 SpooledTemporaryFile（存在硬盘/流中，不吃内存）
+        # - run_in_threadpool 会把这个耗时的同步上传操作，扔到后台线程去执行，绝对不卡主线程！
+        await run_in_threadpool(oss_bucket.put_object, unique_filename, file.file)
+
+        # 3. 构造返回 URL
         file_url = f"https://{config['oss_bucket_name']}.{config['oss_endpoint']}/{unique_filename}"
-        return {"filename": unique_filename, "url": file_url}
+        
+        return {
+            "original_name": file.filename,
+            "oss_filename": unique_filename, 
+            "url": file_url
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"上传失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"上传到 OSS 失败: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
