@@ -146,12 +146,13 @@ async def upload_file(file: UploadFile = File(...)):
     unique_filename = f"{uuid.uuid4().hex}.{ext}"
 
     try:
-        # 2. 解决 OOM 与 卡死：
-        # - file.file 是 FastAPI 底层的 SpooledTemporaryFile（存在硬盘/流中，不吃内存）
-        # - run_in_threadpool 会把这个耗时的同步上传操作，扔到后台线程去执行，绝对不卡主线程！
-        await run_in_threadpool(oss_bucket.put_object, unique_filename, file.file)
+        # 2. 读取文件内容（必须读取，因为 oss2.put_object 需要 bytes）
+        content = await file.read()
+        
+        # 3. 使用 run_in_threadpool 避免阻塞主线程
+        await run_in_threadpool(oss_bucket.put_object, unique_filename, content)
 
-        # 3. 构造返回 URL
+        # 4. 构造返回 URL
         file_url = f"https://{config['oss_bucket_name']}.{config['oss_endpoint']}/{unique_filename}"
         
         return {
@@ -160,6 +161,9 @@ async def upload_file(file: UploadFile = File(...)):
             "url": file_url
         }
     except Exception as e:
+        # 打印详细错误日志
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"上传到 OSS 失败: {str(e)}")
 
 if __name__ == "__main__":
