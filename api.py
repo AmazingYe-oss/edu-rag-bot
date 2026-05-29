@@ -149,8 +149,10 @@ async def upload_file(file: UploadFile = File(...)):
         # 2. 读取文件内容（必须读取，因为 oss2.put_object 需要 bytes）
         content = await file.read()
         
-        # 3. 使用 run_in_threadpool 避免阻塞主线程
-        await run_in_threadpool(oss_bucket.put_object, unique_filename, content)
+        # 3. 直接调用 put_object（同步方法，但 FastAPI 异步端点中直接调用会阻塞，但可以工作）
+        # 使用 asyncio.to_thread 避免阻塞主线程
+        import asyncio
+        await asyncio.to_thread(oss_bucket.put_object, unique_filename, content)
 
         # 4. 构造返回 URL
         file_url = f"https://{config['oss_bucket_name']}.{config['oss_endpoint']}/{unique_filename}"
@@ -164,6 +166,8 @@ async def upload_file(file: UploadFile = File(...)):
         # 打印详细错误日志
         import traceback
         traceback.print_exc()
+        # 打印 OSS 配置信息（不包含密钥）
+        print(f"[Upload Error] OSS endpoint: {config.get('oss_endpoint')}, bucket: {config.get('oss_bucket_name')}")
         raise HTTPException(status_code=500, detail=f"上传到 OSS 失败: {str(e)}")
 
 if __name__ == "__main__":
