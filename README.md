@@ -26,7 +26,7 @@
 ```mermaid
 flowchart LR
     Client["用户浏览器 (Gradio)"]
-    API["FastAPI 后端"]
+    API["FastAPI RESTful API"]
     DashVector["阿里云 DashVector (Serverless 向量库)"]
     Redis["阿里云 Redis (会话缓存 & 限流)"]
     OSS["阿里云 OSS (文件存储)"]
@@ -42,12 +42,20 @@ flowchart LR
 ### 核心数据流
 
 1. 用户在 Gradio 前端输入问题
-2. FastAPI 后端接收请求，先查询 **Redis 缓存**（命中则直接返回，零 LLM 调用费用）
+2. FastAPI RESTful 后端接收请求，先查询 **Redis 缓存**（命中则直接返回，零 LLM 调用费用）
 3. 未命中缓存时，从 **Redis** 提取该会话的短期历史记忆，拼接上下文
 4. 调用 **DashVector** 进行向量语义检索，获取相关知识片段
 5. 将检索上下文 + 历史记忆组装 Prompt，调用 **DashScope 通义千问** 大模型
 6. 通过 **SSE (Server-Sent Events)** 流式返回打字机效果
 7. 回答完成后写入 Redis 缓存（TTL 1小时）并保存会话记忆（TTL 24小时）
+
+### RESTful API 架构
+
+系统采用 RESTful API 设计，路由模块化：
+- `src/routers/conversations.py` — 会话管理与消息流
+- `src/routers/search.py` — 纯检索接口
+- `src/routers/documents.py` — 文档上传与 OSS 存储
+- `src/schemas/` — Pydantic 请求/响应模型
 
 ---
 
@@ -58,6 +66,7 @@ flowchart LR
 - **DashScope Embedding**（text-embedding-v3）：将文档切片转化为 1536 维向量
 - **DashScope LLM**（qwen-plus）：基于检索上下文生成精准回答
 - 支持多种文档格式：TXT、Markdown、PDF、DOCX、Jupyter Notebook
+- **RESTful API**：模块化路由设计，支持会话管理、文档上传、纯检索等接口
 
 ### SSE 流式输出
 - 基于 `stream_chat` 实现逐字打字机效果，用户体验更佳
@@ -225,6 +234,40 @@ kubectl port-forward deployment/rag-frontend 7860:7860 -n edu-rag-bot
 
 ---
 
+## API 端点文档
+
+后端启动后访问 `http://localhost:8000/docs` 查看完整的 Swagger UI 文档。
+
+### 会话管理 (Conversations)
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| POST | `/api/v1/conversations` | 创建新会话，返回 conversation_id |
+| POST | `/api/v1/conversations/{id}/messages` | 发送消息并获取 SSE 流式回答 |
+| GET | `/api/v1/conversations/{id}/messages` | 获取会话历史消息 |
+
+### 文档管理 (Documents)
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| POST | `/api/v1/documents` | 上传文档至 OSS 并向量化入库 |
+| POST | `/api/v1/documents/presigned-url` | 获取 OSS 预签名上传链接 |
+
+### 纯检索 (Search)
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| POST | `/api/v1/search` | 纯向量检索，返回 Top-K 相关片段 |
+
+### 健康检查 (Health)
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | `/api/v1/health` | 服务健康状态检查 |
+| GET | `/metrics` | Prometheus 监控指标 |
+
+---
+
 ## 环境变量说明
 
 | 变量名 | 必填 | 说明 |
@@ -251,15 +294,25 @@ kubectl port-forward deployment/rag-frontend 7860:7860 -n edu-rag-bot
 ```text
 ├── .github/workflows/       # GitHub Actions CI/CD 流水线
 ├── src/                     # 核心业务逻辑
+│   ├── routers/             # FastAPI 路由模块 (RESTful API)
+│   │   ├── conversations.py # 会话管理与消息流
+│   │   ├── search.py        # 纯检索接口
+│   │   └── documents.py     # 文档上传与 OSS 存储
+│   ├── schemas/             # Pydantic 请求/响应模型
+│   │   ├── conversation.py  # 会话相关 Schema
+│   │   ├── search.py        # 检索相关 Schema
+│   │   ├── document.py      # 文档相关 Schema
+│   │   └── common.py        # 通用响应模型
 │   ├── config.py            # 环境变量配置加载
 │   ├── rag_service.py       # RAG 检索引擎 (DashVector + DashScope)
 │   ├── memory_manager.py    # Redis 会话记忆管理
 │   ├── document_loader.py   # 多格式文档加载器 (PDF/DOCX/TXT/MD/IPYNB)
+│   ├── dependencies.py      # 依赖注入与生命周期管理
 │   └── prompts.py           # System Prompt 模板
-├── api.py                   # FastAPI 后端 (SSE 流式 + 限流 + OSS 上传)
+├── api.py                   # FastAPI 入口 (RESTful + SSE 流式 + 限流 + OSS 上传)
 ├── ui.py                    # Gradio 前端交互界面
 ├── Dockerfile               # 多阶段构建镜像文件
-├── docker-compose.yml       # 本地容器编排
+├── docker-compose.yml       # 本地容器编排 (api + ui 服务)
 ├── requirements.txt         # Python 依赖清单
 ├── main.tf                  # Terraform IaC 基础设施声明
 ├── .env.example             # 环境变量配置模板
@@ -278,7 +331,7 @@ kubectl port-forward deployment/rag-frontend 7860:7860 -n edu-rag-bot
 flowchart LR
     Dev["Developer Push Code"]
     CI["GitHub Actions"]
-    Scan["Trivy Security Scan"]
+    Build["Docker Build"]
     ACR["Aliyun ACR"]
     GitOps["GitOps Config Repo"]
     ArgoCD["ArgoCD"]
@@ -286,8 +339,8 @@ flowchart LR
     Pod["RAG Service Pods"]
 
     Dev --> CI
-    CI --> Scan
-    Scan --> ACR
+    CI --> Build
+    Build --> ACR
     CI --> GitOps
     GitOps --> ArgoCD
     ArgoCD --> K8s
@@ -296,15 +349,14 @@ flowchart LR
 
 交付流程如下：
 
-1. 开发者向业务代码仓库 Push 代码。
+1. 开发者向业务代码仓库 Push 代码（main 分支）。
 2. GitHub Actions 自动触发 CI 流水线。
-3. CI 执行 Docker 镜像构建。
-4. Trivy 对镜像进行安全扫描，实现安全左移。
-5. 扫描通过后，将镜像推送至阿里云 ACR。
-6. CI 自动修改 GitOps 配置仓库中的镜像 Tag。
-7. ArgoCD 监听 GitOps 仓库变更。
-8. ArgoCD 将期望状态同步到 Kubernetes 集群。
-9. Kubernetes 执行滚动更新，完成服务发布。
+3. CI 执行 Docker 镜像构建（多阶段构建优化）。
+4. 镜像推送至阿里云 ACR（同时打 latest 和 commit SHA 标签）。
+5. CI 自动修改 GitOps 配置仓库中的镜像 Tag。
+6. ArgoCD 监听 GitOps 仓库变更。
+7. ArgoCD 将期望状态同步到 Kubernetes 集群。
+8. Kubernetes 执行滚动更新，完成服务发布。
 
 ---
 

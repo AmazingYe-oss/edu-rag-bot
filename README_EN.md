@@ -26,7 +26,7 @@ The system builds its RAG retrieval pipeline based on **LlamaIndex + Tongyi Qian
 ```mermaid
 flowchart LR
     Client["User Browser (Gradio)"]
-    API["FastAPI Backend"]
+    API["FastAPI RESTful API"]
     DashVector["Alibaba Cloud DashVector (Serverless Vector DB)"]
     Redis["Alibaba Cloud Redis (Session Cache & Rate Limit)"]
     OSS["Alibaba Cloud OSS (File Storage)"]
@@ -42,12 +42,20 @@ flowchart LR
 ### Core Data Flow
 
 1. User enters a question in the Gradio frontend
-2. FastAPI backend receives the request and first queries **Redis cache** (returns directly on hit, zero LLM calling cost)
+2. FastAPI RESTful backend receives the request and first queries **Redis cache** (returns directly on hit, zero LLM calling cost)
 3. On cache miss, retrieves short-term conversation history for the session from **Redis** and concatenates context
 4. Calls **DashVector** for vector semantic retrieval to obtain relevant knowledge snippets
 5. Assembles retrieval context + conversation history into a Prompt, then calls the **DashScope Tongyi Qianwen** LLM
 6. Streams back a typewriter effect via **SSE (Server-Sent Events)**
 7. After completion, writes answer to Redis cache (TTL 1 hour) and saves session memory (TTL 24 hours)
+
+### RESTful API Architecture
+
+The system uses RESTful API design with modular routing:
+- `src/routers/conversations.py` — Session management and message streaming
+- `src/routers/search.py` — Pure retrieval endpoint
+- `src/routers/documents.py` — Document upload and OSS storage
+- `src/schemas/` — Pydantic request/response models
 
 ---
 
@@ -58,6 +66,7 @@ flowchart LR
 - **DashScope Embedding** (text-embedding-v3): Converts document chunks into 1536-dimensional vectors
 - **DashScope LLM** (qwen-plus): Generates precise answers based on retrieval context
 - Supports multiple document formats: TXT, Markdown, PDF, DOCX, Jupyter Notebook
+- **RESTful API**: Modular routing design supporting session management, document upload, and pure retrieval endpoints
 
 ### SSE Streaming Output
 - Character-by-character typewriter effect via `stream_chat`, enhancing user experience
@@ -225,6 +234,40 @@ Open browser: http://localhost:7860
 
 ---
 
+## API Endpoint Documentation
+
+After starting the backend, visit `http://localhost:8000/docs` for the complete Swagger UI documentation.
+
+### Conversations
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/conversations` | Create a new session, returns conversation_id |
+| POST | `/api/v1/conversations/{id}/messages` | Send a message and get SSE streaming response |
+| GET | `/api/v1/conversations/{id}/messages` | Get session message history |
+
+### Documents
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/documents` | Upload document to OSS and vectorize into database |
+| POST | `/api/v1/documents/presigned-url` | Get OSS presigned upload URL |
+
+### Search
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/search` | Pure vector search, returns Top-K relevant snippets |
+
+### Health
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/health` | Service health check |
+| GET | `/metrics` | Prometheus monitoring metrics |
+
+---
+
 ## Environment Variables
 
 | Variable | Required | Description |
@@ -251,15 +294,25 @@ Open browser: http://localhost:7860
 ```text
 ├── .github/workflows/       # GitHub Actions CI/CD pipeline
 ├── src/                     # Core business logic
+│   ├── routers/             # FastAPI route modules (RESTful API)
+│   │   ├── conversations.py # Session management and message streaming
+│   │   ├── search.py        # Pure retrieval endpoint
+│   │   └── documents.py     # Document upload and OSS storage
+│   ├── schemas/             # Pydantic request/response models
+│   │   ├── conversation.py  # Conversation schemas
+│   │   ├── search.py        # Search schemas
+│   │   ├── document.py      # Document schemas
+│   │   └── common.py        # Common response models
 │   ├── config.py            # Environment variable configuration loading
 │   ├── rag_service.py       # RAG retrieval engine (DashVector + DashScope)
 │   ├── memory_manager.py    # Redis session memory management
 │   ├── document_loader.py   # Multi-format document loader (PDF/DOCX/TXT/MD/IPYNB)
+│   ├── dependencies.py      # Dependency injection and lifecycle management
 │   └── prompts.py           # System Prompt templates
-├── api.py                   # FastAPI backend (SSE streaming + rate limit + OSS upload)
+├── api.py                   # FastAPI entry point (RESTful + SSE streaming + rate limit + OSS upload)
 ├── ui.py                    # Gradio frontend interactive interface
 ├── Dockerfile               # Multi-stage build image file
-├── docker-compose.yml       # Local container orchestration
+├── docker-compose.yml       # Local container orchestration (api + ui services)
 ├── requirements.txt         # Python dependency manifest
 ├── main.tf                  # Terraform IaC infrastructure declaration
 ├── .env.example             # Environment variable configuration template
@@ -278,7 +331,7 @@ The project adopts a Dual-Repository GitOps architecture, completely decoupling 
 flowchart LR
     Dev["Developer Push Code"]
     CI["GitHub Actions"]
-    Scan["Trivy Security Scan"]
+    Build["Docker Build"]
     ACR["Aliyun ACR"]
     GitOps["GitOps Config Repo"]
     ArgoCD["ArgoCD"]
@@ -286,8 +339,8 @@ flowchart LR
     Pod["RAG Service Pods"]
 
     Dev --> CI
-    CI --> Scan
-    Scan --> ACR
+    CI --> Build
+    Build --> ACR
     CI --> GitOps
     GitOps --> ArgoCD
     ArgoCD --> K8s
@@ -296,15 +349,14 @@ flowchart LR
 
 The delivery pipeline workflow:
 
-1. Developers push code to the business repository.
+1. Developers push code to the business repository (main branch).
 2. GitHub Actions automatically triggers the CI pipeline.
-3. CI executes the Docker image build.
-4. Trivy scans the image for vulnerabilities, implementing Shift-Left Security.
-5. Upon passing the scan, the image is pushed to Alibaba Cloud ACR.
-6. CI automatically updates the Image Tag in the GitOps configuration repository.
-7. ArgoCD continuously monitors the GitOps repository for changes.
-8. ArgoCD synchronizes the desired state to the Kubernetes cluster.
-9. Kubernetes performs a rolling update to complete the deployment.
+3. CI executes Docker image build (multi-stage build optimization).
+4. Image is pushed to Alibaba Cloud ACR (tagged with both latest and commit SHA).
+5. CI automatically updates the Image Tag in the GitOps configuration repository.
+6. ArgoCD continuously monitors the GitOps repository for changes.
+7. ArgoCD synchronizes the desired state to the Kubernetes cluster.
+8. Kubernetes performs a rolling update to complete the deployment.
 
 ---
 
