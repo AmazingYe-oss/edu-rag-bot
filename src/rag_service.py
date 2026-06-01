@@ -3,6 +3,8 @@ import dashvector
 from typing import Any
 from pydantic import PrivateAttr
 
+from pathlib import Path
+
 from llama_index.core import (
     Settings,
     VectorStoreIndex,
@@ -23,7 +25,7 @@ class DashVectorStore(OriginalDashVectorStore):
 
 
 from src.prompts import build_system_prompt
-from src.document_loader import load_documents_from_directory
+from src.document_loader import load_documents_from_directory, load_single_file
 
 
 class RAGService:
@@ -127,6 +129,14 @@ class RAGService:
             similarity_top_k=self.config.get("similarity_top_k", 3)
         )
 
+    def insert_document(self, file_path: Path):
+        doc = load_single_file(file_path)
+        if doc is None:
+            raise ValueError(f"无法解析文件内容，不支持的格式或空文件: {file_path.name}")
+        self.index.insert(doc)
+        print(f"✅ 文档已向量化入库: {file_path.name}")
+        return doc.metadata
+
     def _retrieve_context(self, question):
         """
         根据用户问题检索相关知识片段。
@@ -146,6 +156,20 @@ class RAGService:
             )
 
         return "\n\n".join(context_list)
+
+    def retrieve(self, question):
+        nodes = self.retriever.retrieve(question)
+        results = []
+        for i, node in enumerate(nodes, start=1):
+            metadata = node.metadata or {}
+            results.append({
+                "index": i,
+                "content": node.get_content(),
+                "file_name": metadata.get("file_name", "未知文件"),
+                "file_type": metadata.get("file_type", ""),
+                "score": node.score if hasattr(node, 'score') else None,
+            })
+        return results
 
     def _build_user_prompt(self, question, context):
         """

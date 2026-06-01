@@ -4,8 +4,15 @@ import json
 import uuid
 import gradio as gr
 
-API_URL = os.getenv("API_URL", "http://localhost:8000/api/chat")
-UPLOAD_URL = os.getenv("UPLOAD_URL", "http://localhost:8000/api/upload")
+API_BASE = os.getenv("API_BASE", "http://localhost:8000/api/v1")
+
+
+def _conversation_url(conversation_id: str) -> str:
+    return f"{API_BASE}/conversations/{conversation_id}/messages"
+
+
+def _upload_url() -> str:
+    return f"{API_BASE}/documents"
 
 
 custom_css = """
@@ -37,12 +44,13 @@ def answer_question(history, session_id):
     else:
         question = str(raw_content)
 
-    req_payload = {"question": question, "session_id": session_id}
+    req_payload = {"content": question}
 
     history.append({"role": "assistant", "content": ""})
 
     try:
-        response = requests.post(API_URL, json=req_payload, stream=True, timeout=60)
+        url = _conversation_url(session_id)
+        response = requests.post(url, json=req_payload, stream=True, timeout=60)
         response.raise_for_status()
 
         full_answer = ""
@@ -73,11 +81,14 @@ def upload_file_to_oss(file):
     try:
         with open(file.name, "rb") as f:
             files = {"file": (os.path.basename(file.name), f, "application/octet-stream")}
-            response = requests.post(UPLOAD_URL, files=files, timeout=120)
+            response = requests.post(_upload_url(), files=files, timeout=120)
             response.raise_for_status()
             result = response.json()
-            filename = result.get("oss_filename", "未知")
-            return f"✅ 上传成功！云端路径：\n{filename}"
+            filename = result.get("filename", "未知")
+            indexed = result.get("indexed", False)
+            index_msg = result.get("index_message", "")
+            status = "✅ 已入库" if indexed else "⚠️ 未入库"
+            return f"✅ 上传成功！{status}\n文件: {filename}\n{index_msg}"
     except Exception as e:
         return f"❌ 上传失败：{str(e)}"
 
@@ -95,7 +106,7 @@ with gr.Blocks(title="AI 知识库助手", fill_height=True) as demo:
         with gr.Column(scale=1, min_width=260, variant="panel"):
             gr.Markdown("""
             ### 🎓 知识库助手
-            <span style="color: gray; font-size: 13px;">Edu RAG Backend v5.0</span>
+            <span style="color: gray; font-size: 13px;">Edu RAG API v6.0</span>
             
             ---
             
