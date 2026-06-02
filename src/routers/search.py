@@ -4,13 +4,14 @@ from fastapi.concurrency import run_in_threadpool
 
 from src.dependencies import rag_service
 from src.schemas.search import SearchRequest, SearchResponse, SearchResultItem
-
+from src.dependencies import get_rag_service
 router = APIRouter(prefix="/api/v1/search", tags=["Search"])
 
 
 @router.post("", response_model=SearchResponse)
 async def search(body: SearchRequest):
     try:
+        rag_service = get_rag_service()
         results_raw = await run_in_threadpool(rag_service.retrieve, body.query)
     except Exception as e:
         traceback.print_exc()

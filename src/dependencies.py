@@ -21,6 +21,11 @@ def init_app_state(_config, _rag_service, _memory_manager):
     rag_service = _rag_service
     memory_manager = _memory_manager
 
+def get_rag_service():
+    if rag_service is None:
+        raise RuntimeError("RAG 服务尚未初始化！")
+    return rag_service
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
