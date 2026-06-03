@@ -262,6 +262,7 @@ kubectl port-forward deployment/rag-frontend 7860:7860 -n edu-rag-bot
 | 方法 | 端点 | 说明 |
 |------|------|------|
 | POST | `/api/v1/documents` | 上传文档至 OSS 并向量化入库（需传入 `user_id`） |
+| POST | `/api/v1/documents/batch` | 批量上传多个文件（最多 10 个）并入库 |
 | POST | `/api/v1/documents/presigned-url` | 获取 OSS 预签名上传链接 |
 
 ### 纯检索 (Search)

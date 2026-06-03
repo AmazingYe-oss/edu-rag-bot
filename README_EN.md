@@ -262,6 +262,7 @@ After starting the backend, visit `http://localhost:8000/docs` for the complete 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/v1/documents` | Upload document to OSS and vectorize into database (requires `user_id`) |
+| POST | `/api/v1/documents/batch` | Batch upload multiple files (up to 10) and vectorize into database |
 | POST | `/api/v1/documents/presigned-url` | Get OSS presigned upload URL |
 
 ### Search

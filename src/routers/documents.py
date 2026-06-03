@@ -2,8 +2,10 @@ import os
 import uuid
 import tempfile
 import traceback
+import asyncio
 from pathlib import Path
 from datetime import datetime
+from typing import List
 
 import oss2
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
@@ -15,6 +17,7 @@ from src.schemas.document import (
     PresignedUrlRequest,
     PresignedUrlResponse,
     DocumentUploadResponse,
+    BatchUploadResponse,
 )
 
 router = APIRouter(prefix="/api/v1/documents", tags=["Documents"])
@@ -98,3 +101,95 @@ async def get_presigned_url(body: PresignedUrlRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"生成预签名 URL 失败: {str(e)}")
+
+
+async def _process_single_file(
+    user_id: str,
+    file: UploadFile,
+    current_date: str,
+) -> DocumentUploadResponse:
+    """
+    处理单个文件的上传与入库（辅助函数，供批量上传复用）。
+    """
+    ext = file.filename.rsplit(".", 1)[-1] if "." in (file.filename or "") else ""
+    doc_id = uuid.uuid4().hex
+    oss_key = f"users/{user_id}/documents/{current_date}/{doc_id}.{ext}" if ext else f"users/{user_id}/documents/{current_date}/{doc_id}"
+
+    try:
+        content = await file.read()
+        await asyncio.to_thread(oss_bucket.put_object, oss_key, content)
+        file_url = f"https://{config['oss_bucket_name']}.{config['oss_endpoint']}/{oss_key}"
+
+        suffix = f".{ext}" if ext else ""
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        summary = None
+        try:
+            result = await rag_service.insert_document_v2(Path(tmp_path), user_id)
+            indexed = True
+            index_msg = f"已入库 ({result.get('chunks_count', 0)} 个切片)"
+            summary = result.get('summary')
+        except ValueError as ve:
+            indexed = False
+            index_msg = str(ve)
+        except Exception as ie:
+            traceback.print_exc()
+            indexed = False
+            index_msg = f"向量化入库失败: {str(ie)}"
+        finally:
+            os.unlink(tmp_path)
+
+        return DocumentUploadResponse(
+            document_id=doc_id,
+            filename=file.filename,
+            url=file_url,
+            indexed=indexed,
+            index_message=index_msg,
+            summary=summary,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        return DocumentUploadResponse(
+            document_id=doc_id,
+            filename=file.filename,
+            url="",
+            indexed=False,
+            index_message=f"上传失败: {str(e)}",
+            summary=None,
+        )
+
+
+@router.post("/batch", response_model=BatchUploadResponse, status_code=201)
+async def batch_upload_documents(
+    user_id: str = Form(...),
+    files: List[UploadFile] = File(...),
+):
+    """
+    批量上传多个文件并入库（最多 10 个文件）。
+    """
+    if oss_bucket is None:
+        raise HTTPException(status_code=503, detail="OSS 未配置，无法上传文件")
+
+    if len(files) > 10:
+        raise HTTPException(status_code=400, detail="每次最多上传 10 个文件")
+
+    if not files:
+        raise HTTPException(status_code=400, detail="请至少上传一个文件")
+
+    current_date = datetime.now().strftime("%Y-%m-%d")
+
+    # 并行处理所有文件上传
+    tasks = [_process_single_file(user_id, file, current_date) for file in files]
+    results = await asyncio.gather(*tasks)
+
+    success_count = sum(1 for r in results if r.indexed)
+    failed_count = len(results) - success_count
+
+    return BatchUploadResponse(
+        total=len(results),
+        success_count=success_count,
+        failed_count=failed_count,
+        results=list(results),
+    )

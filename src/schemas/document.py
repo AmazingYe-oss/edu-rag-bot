@@ -22,3 +22,10 @@ class DocumentUploadResponse(BaseModel):
     indexed: bool = Field(..., description="是否已向量化入库")
     index_message: str = Field(..., description="入库结果描述")
     summary: str | None = Field(None, description="文档全局摘要")
+
+
+class BatchUploadResponse(BaseModel):
+    total: int = Field(..., description="上传文件总数")
+    success_count: int = Field(..., description="成功入库文件数")
+    failed_count: int = Field(..., description="失败文件数")
+    results: list[DocumentUploadResponse] = Field(..., description="每个文件的处理结果")
