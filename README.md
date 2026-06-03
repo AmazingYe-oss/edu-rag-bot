@@ -1,7 +1,7 @@
 # Edu RAG Bot — 教育知识库智能问答系统
 
 ![Python](https://img.shields.io/badge/Python-3.10-blue?logo=python)
-![FastAPI](https://img.shields.io/badge/FastAPI-v5.0-009688?logo=fastapi)
+![FastAPI](https://img.shields.io/badge/FastAPI-v6.0-009688?logo=fastapi)
 ![Gradio](https://img.shields.io/badge/Gradio-UI-orange?logo=gradio)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-Ready-blue?logo=kubernetes)
@@ -10,12 +10,15 @@
 ![OSS](https://img.shields.io/badge/OSS-对象存储-blue?logo=alibabacloud)
 ![Terraform](https://img.shields.io/badge/Terraform-IaC-purple?logo=terraform)
 ![CI/CD](https://img.shields.io/badge/CI-GitHub_Actions-green?logo=github-actions)
+![Multi-Tenant](https://img.shields.io/badge/Multi--Tenant-RAG_2.0-orange)
 
 ## 项目简介
 
 本项目是一个面向教育场景的 **RAG（检索增强生成） 智能问答系统**，服务于企业内部新员工培训与知识管理。
 
 系统基于 **LlamaIndex + 通义千问（DashScope）** 构建 RAG 检索链路，使用**阿里云 DashVector** 作为 Serverless 向量数据库，**阿里云 Redis** 提供会话记忆与 API 限流，**阿里云 OSS** 实现文档云端存储，前端采用 **Gradio** 交互式界面，后端采用 **FastAPI** 微服务架构，支持 **SSE 流式打字机输出**，并通过 **Docker + Kubernetes + GitHub Actions + GitOps** 实现云原生交付。
+
+**V6.0 RAG 2.0 核心升级**：引入多租户隔离架构，支持用户级文件物理隔离、全局摘要生成、智能切片与 Metadata 标签绑定，以及基于 `user_id` 的向量库检索过滤，确保数据安全与高精度检索。
 
 > 核心定位：将企业内部的制度文档、开发规范、课程资料等非结构化知识，转化为可即时检索、智能问答的 AI 知识库助手。
 
@@ -81,13 +84,21 @@ flowchart LR
 - **Redis 语义缓存**：相同问题精确匹配缓存，1 小时内重复查询零 LLM 调用成本
 - **API 限流保护**：基于 Redis + FastAPI-Limiter，单接口每分钟最多 5 次请求
 
-### 文件上传 (OSS)
-- 支持将文档上传至阿里云 OSS，实现知识库文档的云端存储
+### 文件上传 (OSS) - RAG 2.0
+- **多租户物理隔离**：文件路径动态拼接为 `users/{user_id}/documents/{date}/{filename}`
+- **全局摘要生成**：异步调用大模型提取文档前 3000 字符，生成 100 字以内的类别/主题摘要
+- **智能切片与 Metadata 绑定**：RecursiveCharacterTextSplitter 切片后自动绑定 `user_id`、`filename`、`upload_time`、`summary`
+- **向量库隔离入库**：带标签的 Documents 批量存入 DashVector，支持后续精准过滤
 - 支持服务端上传与预签名 URL 直传两种模式
 
 ### 可观测性
 - 集成 **prometheus-fastapi-instrumentator**，自动暴露 `/metrics` 端点
 - 支持 QPS、请求延迟、错误率等接口指标采集
+
+### 多租户检索隔离 (RAG 2.0)
+- **MetadataFilters 精准过滤**：检索时根据 `user_id` 在 DashVector 层执行 ExactMatch 过滤
+- **端到端身份透传**：从 API 请求到向量库查询全程携带 `user_id`，杜绝跨租户数据泄露
+- **零费用纯检索接口**：`/api/v1/search` 支持传入 `user_id`，仅返回匹配片段，不调用 LLM
 
 ---
 
@@ -250,14 +261,14 @@ kubectl port-forward deployment/rag-frontend 7860:7860 -n edu-rag-bot
 
 | 方法 | 端点 | 说明 |
 |------|------|------|
-| POST | `/api/v1/documents` | 上传文档至 OSS 并向量化入库 |
+| POST | `/api/v1/documents` | 上传文档至 OSS 并向量化入库（需传入 `user_id`） |
 | POST | `/api/v1/documents/presigned-url` | 获取 OSS 预签名上传链接 |
 
 ### 纯检索 (Search)
 
 | 方法 | 端点 | 说明 |
 |------|------|------|
-| POST | `/api/v1/search` | 纯向量检索，返回 Top-K 相关片段 |
+| POST | `/api/v1/search` | 纯向量检索，返回 Top-K 相关片段（支持 `user_id` 隔离过滤） |
 
 ### 健康检查 (Health)
 
@@ -295,18 +306,18 @@ kubectl port-forward deployment/rag-frontend 7860:7860 -n edu-rag-bot
 ├── .github/workflows/       # GitHub Actions CI/CD 流水线
 ├── src/                     # 核心业务逻辑
 │   ├── routers/             # FastAPI 路由模块 (RESTful API)
-│   │   ├── conversations.py # 会话管理与消息流
-│   │   ├── search.py        # 纯检索接口
-│   │   └── documents.py     # 文档上传与 OSS 存储
+│   │   ├── conversations.py # 会话管理与消息流（支持 user_id 隔离）
+│   │   ├── search.py        # 纯检索接口（支持 user_id 过滤）
+│   │   └── documents.py     # 文档上传与 OSS 存储（RAG 2.0 多租户）
 │   ├── schemas/             # Pydantic 请求/响应模型
 │   │   ├── conversation.py  # 会话相关 Schema
 │   │   ├── search.py        # 检索相关 Schema
 │   │   ├── document.py      # 文档相关 Schema
 │   │   └── common.py        # 通用响应模型
 │   ├── config.py            # 环境变量配置加载
-│   ├── rag_service.py       # RAG 检索引擎 (DashVector + DashScope)
+│   ├── rag_service.py       # RAG 检索引擎 (DashVector + DashScope + MetadataFilters)
 │   ├── memory_manager.py    # Redis 会话记忆管理
-│   ├── document_loader.py   # 多格式文档加载器 (PDF/DOCX/TXT/MD/IPYNB)
+│   ├── document_loader.py   # 多格式文档加载器 + 全局摘要生成 + 智能切片
 │   ├── dependencies.py      # 依赖注入与生命周期管理
 │   └── prompts.py           # System Prompt 模板
 ├── api.py                   # FastAPI 入口 (RESTful + SSE 流式 + 限流 + OSS 上传)
@@ -360,6 +371,30 @@ flowchart LR
 
 ---
 
+## RAG 2.0 核心升级详解
+
+### 1. OSS 多租户物理隔离
+文件上传时根据 `user_id` 动态拼接路径：`users/{user_id}/documents/{YYYY-MM-DD}/{filename}`，从存储层实现数据物理隔离。
+
+### 2. 全局摘要生成 (Global Summary)
+在文本切片前，截取文档前 3000 字符异步调用通义千问大模型，生成 100 字以内的精炼摘要（包含文档类别、核心主题、适用对象），为每个切片提供全局上下文。
+
+### 3. 智能切片与 Metadata 绑定
+使用 `RecursiveCharacterTextSplitter` 进行语义切片，并为每个 Chunk 绑定丰富的元数据标签：
+```python
+{
+    "user_id": "用户唯一标识",
+    "filename": "原始文件名",
+    "upload_time": "ISO-8601 时间戳",
+    "summary": "全局摘要内容"
+}
+```
+
+### 4. 向量库隔离检索
+检索时通过 LlamaIndex 的 `MetadataFilters` 与 `ExactMatchFilter` 在 DashVector 层执行精准过滤，确保用户只能检索到自己名下的知识片段，彻底杜绝跨租户数据泄露。
+
+---
+
 ## 常见问题
 
 **Q: 后端启动报 `DASHVECTOR_API_KEY` 未配置？**
@@ -377,15 +412,19 @@ A: 集群缺失 Prometheus CRD。执行步骤 0 安装 kube-prometheus-stack。
 **Q: OSS 上传返回 503？**
 A: 未配置 OSS 环境变量，或 AccessKey 权限不足。
 
+**Q: RAG 2.0 多租户隔离如何使用？**
+A: 在调用 `/api/v1/documents` 上传文件时，通过 Form 表单传入 `user_id` 参数；在检索或对话时，在请求体中携带相同的 `user_id`，系统将自动进行数据隔离与过滤。
+
 ---
 
 ## 适用场景
 
-- 企业内部知识库智能问答
-- 新员工入职培训自助答疑
-- 教育内容开发规范查询
-- 云原生 AI 应用工程化实践
-- AI 应用 CI/CD 与 GitOps 交付演示
+- **企业内部知识库智能问答**（支持多租户隔离，不同部门/用户数据互不可见）
+- **新员工入职培训自助答疑**
+- **教育内容开发规范查询**
+- **云原生 AI 应用工程化实践**
+- **AI 应用 CI/CD 与 GitOps 交付演示**
+- **高精度 RAG 检索系统**（全局摘要 + Metadata 标签提升召回准确率）
 
 ---
 

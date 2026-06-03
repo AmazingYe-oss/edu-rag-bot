@@ -1,7 +1,7 @@
 # Edu RAG Bot — AI Q&A System for Education Knowledge Base
 
 ![Python](https://img.shields.io/badge/Python-3.10-blue?logo=python)
-![FastAPI](https://img.shields.io/badge/FastAPI-v5.0-009688?logo=fastapi)
+![FastAPI](https://img.shields.io/badge/FastAPI-v6.0-009688?logo=fastapi)
 ![Gradio](https://img.shields.io/badge/Gradio-UI-orange?logo=gradio)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-Ready-blue?logo=kubernetes)
@@ -10,12 +10,15 @@
 ![OSS](https://img.shields.io/badge/OSS-Object_Storage-blue?logo=alibabacloud)
 ![Terraform](https://img.shields.io/badge/Terraform-IaC-purple?logo=terraform)
 ![CI/CD](https://img.shields.io/badge/CI-GitHub_Actions-green?logo=github-actions)
+![Multi-Tenant](https://img.shields.io/badge/Multi--Tenant-RAG_2.0-orange)
 
 ## Project Overview
 
 This project is an **RAG (Retrieval-Augmented Generation) AI Q&A system** designed for education scenarios, serving enterprise internal new employee onboarding and knowledge management.
 
 The system builds its RAG retrieval pipeline based on **LlamaIndex + Tongyi Qianwen (DashScope)**, using **Alibaba Cloud DashVector** as a Serverless vector database, **Alibaba Cloud Redis** for session memory and API rate limiting, and **Alibaba Cloud OSS** for document cloud storage. The frontend adopts a **Gradio** interactive interface, while the backend uses a **FastAPI** microservice architecture with **SSE streaming typewriter output**, achieving cloud-native delivery through **Docker + Kubernetes + GitHub Actions + GitOps**.
+
+**V6.0 RAG 2.0 Core Upgrade**: Introduces multi-tenant isolation architecture, supporting user-level file physical isolation, global summary generation, intelligent chunking with Metadata tag binding, and `user_id`-based vector database retrieval filtering, ensuring data security and high-precision retrieval.
 
 > Core Positioning: Transform unstructured enterprise knowledge — such as policy documents, development standards, and training materials — into an AI knowledge base assistant capable of instant retrieval and intelligent Q&A.
 
@@ -81,13 +84,21 @@ The system uses RESTful API design with modular routing:
 - **Redis Semantic Cache**: Exact-match caching for identical questions, zero LLM cost for repeat queries within 1 hour
 - **API Rate Limit Protection**: Based on Redis + FastAPI-Limiter, max 5 requests per minute per endpoint
 
-### File Upload (OSS)
-- Supports uploading documents to Alibaba Cloud OSS for cloud storage of knowledge base documents
+### File Upload (OSS) - RAG 2.0
+- **Multi-Tenant Physical Isolation**: File paths dynamically constructed as `users/{user_id}/documents/{date}/{filename}`
+- **Global Summary Generation**: Asynchronously calls LLM to extract first 3000 characters, generating a 100-character summary of category/topic
+- **Intelligent Chunking & Metadata Binding**: RecursiveCharacterTextSplitter automatically binds `user_id`, `filename`, `upload_time`, `summary` after chunking
+- **Vector Database Isolated Storage**: Documents with tags are batch-stored into DashVector, supporting precise filtering
 - Supports both server-side upload and pre-signed URL direct upload modes
 
 ### Observability
 - Integrates **prometheus-fastapi-instrumentator**, automatically exposing `/metrics` endpoint
 - Supports collection of API metrics including QPS, request latency, error rate
+
+### Multi-Tenant Retrieval Isolation (RAG 2.0)
+- **MetadataFilters Precise Filtering**: Executes ExactMatch filtering at DashVector layer based on `user_id` during retrieval
+- **End-to-End Identity Propagation**: Carries `user_id` throughout the entire process from API request to vector database query, preventing cross-tenant data leakage
+- **Zero-Cost Pure Search Endpoint**: `/api/v1/search` supports passing `user_id`, returns only matching snippets without invoking LLM
 
 ---
 
@@ -250,14 +261,14 @@ After starting the backend, visit `http://localhost:8000/docs` for the complete 
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/documents` | Upload document to OSS and vectorize into database |
+| POST | `/api/v1/documents` | Upload document to OSS and vectorize into database (requires `user_id`) |
 | POST | `/api/v1/documents/presigned-url` | Get OSS presigned upload URL |
 
 ### Search
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/search` | Pure vector search, returns Top-K relevant snippets |
+| POST | `/api/v1/search` | Pure vector search, returns Top-K relevant snippets (supports `user_id` isolation filtering) |
 
 ### Health
 
@@ -295,18 +306,18 @@ After starting the backend, visit `http://localhost:8000/docs` for the complete 
 ├── .github/workflows/       # GitHub Actions CI/CD pipeline
 ├── src/                     # Core business logic
 │   ├── routers/             # FastAPI route modules (RESTful API)
-│   │   ├── conversations.py # Session management and message streaming
-│   │   ├── search.py        # Pure retrieval endpoint
-│   │   └── documents.py     # Document upload and OSS storage
+│   │   ├── conversations.py # Session management and message streaming (supports user_id isolation)
+│   │   ├── search.py        # Pure retrieval endpoint (supports user_id filtering)
+│   │   └── documents.py     # Document upload and OSS storage (RAG 2.0 multi-tenant)
 │   ├── schemas/             # Pydantic request/response models
 │   │   ├── conversation.py  # Conversation schemas
 │   │   ├── search.py        # Search schemas
 │   │   ├── document.py      # Document schemas
 │   │   └── common.py        # Common response models
 │   ├── config.py            # Environment variable configuration loading
-│   ├── rag_service.py       # RAG retrieval engine (DashVector + DashScope)
+│   ├── rag_service.py       # RAG retrieval engine (DashVector + DashScope + MetadataFilters)
 │   ├── memory_manager.py    # Redis session memory management
-│   ├── document_loader.py   # Multi-format document loader (PDF/DOCX/TXT/MD/IPYNB)
+│   ├── document_loader.py   # Multi-format document loader + global summary generation + intelligent chunking
 │   ├── dependencies.py      # Dependency injection and lifecycle management
 │   └── prompts.py           # System Prompt templates
 ├── api.py                   # FastAPI entry point (RESTful + SSE streaming + rate limit + OSS upload)
@@ -360,6 +371,30 @@ The delivery pipeline workflow:
 
 ---
 
+## RAG 2.0 Core Upgrade Details
+
+### 1. OSS Multi-Tenant Physical Isolation
+Files are dynamically path-constructed based on `user_id` during upload: `users/{user_id}/documents/{YYYY-MM-DD}/{filename}`, achieving physical data isolation at the storage layer.
+
+### 2. Global Summary Generation
+Before text chunking, the first 3000 characters of the document are asynchronously sent to Tongyi Qianwen LLM to generate a concise summary within 100 characters (including document category, core topic, and target audience), providing global context for each chunk.
+
+### 3. Intelligent Chunking & Metadata Binding
+Uses `RecursiveCharacterTextSplitter` for semantic chunking and binds rich metadata tags to each Chunk:
+```python
+{
+    "user_id": "User unique identifier",
+    "filename": "Original filename",
+    "upload_time": "ISO-8601 timestamp",
+    "summary": "Global summary content"
+}
+```
+
+### 4. Vector Database Isolated Retrieval
+During retrieval, LlamaIndex's `MetadataFilters` and `ExactMatchFilter` execute precise filtering at the DashVector layer, ensuring users can only retrieve knowledge snippets under their own name, completely preventing cross-tenant data leakage.
+
+---
+
 ## FAQ
 
 **Q: Backend startup reports `DASHVECTOR_API_KEY` not configured?**
@@ -377,15 +412,19 @@ A: Prometheus CRD resources are missing in the cluster. Execute Step 0 to instal
 **Q: OSS upload returns 503?**
 A: OSS environment variables are not configured, or the AccessKey has insufficient permissions.
 
+**Q: How to use RAG 2.0 Multi-Tenant Isolation?**
+A: When calling `/api/v1/documents` to upload files, pass the `user_id` parameter via Form data; when searching or conversing, include the same `user_id` in the request body, and the system will automatically perform data isolation and filtering.
+
 ---
 
 ## Use Cases
 
-- Enterprise internal knowledge base intelligent Q&A
-- New employee onboarding self-service Q&A
-- Educational content development standards lookup
-- Cloud-native AI application engineering practice
-- AI application CI/CD and GitOps delivery demonstration
+- **Enterprise internal knowledge base intelligent Q&A** (supports multi-tenant isolation, data invisible between different departments/users)
+- **New employee onboarding self-service Q&A**
+- **Educational content development standards lookup**
+- **Cloud-native AI application engineering practice**
+- **AI application CI/CD and GitOps delivery demonstration**
+- **High-Precision RAG Retrieval System** (global summary + Metadata tags improve recall accuracy)
 
 ---
 
