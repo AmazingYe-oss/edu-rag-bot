@@ -6,7 +6,7 @@ from datetime import datetime
 import docx2txt
 from pypdf import PdfReader
 from llama_index.core.schema import Document
-from llama_index.core.node_parser import RecursiveCharacterTextSplitter
+from llama_index.core.node_parser import SentenceSplitter
 from llama_index.llms.dashscope import DashScope as DashScopeLLM
 
 
@@ -113,10 +113,9 @@ def chunk_document_with_metadata(
     """
     智能切片并绑定多租户 Metadata。
     """
-    splitter = RecursiveCharacterTextSplitter(
+    splitter = SentenceSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
-        separator="\n",
     )
     
     nodes = splitter.get_nodes_from_documents([Document(text=text)])
