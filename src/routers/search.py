@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/v1/search", tags=["Search"])
 async def search(body: SearchRequest):
     try:
         rag_service = get_rag_service()
-        results_raw = await run_in_threadpool(rag_service.retrieve, body.query)
+        results_raw = await run_in_threadpool(rag_service.retrieve, body.query, body.user_id)
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"检索失败: {str(e)}")

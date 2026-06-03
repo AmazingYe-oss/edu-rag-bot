@@ -59,7 +59,8 @@ async def send_message(conversation_id: str, body: MessageRequest):
 
     def event_generator():
         try:
-            gen, ctx = rag_service.stream_ask(full_question)
+            # 传递 user_id 以实现检索隔离
+            gen, ctx = rag_service.stream_ask(full_question, body.user_id)
             answer = ""
             ctx_sent = False
             for chunk in gen:

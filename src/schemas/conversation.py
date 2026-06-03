@@ -13,6 +13,7 @@ class ConversationCreateResponse(BaseModel):
 
 class MessageRequest(BaseModel):
     content: str = Field(..., description="用户消息内容", min_length=1, max_length=50000)
+    user_id: str | None = Field(None, description="租户/用户唯一标识，用于隔离检索")
 
 
 class MessageSSEEvent(BaseModel):

@@ -1,6 +1,10 @@
 from pydantic import BaseModel, Field
 
 
+class DocumentUploadRequest(BaseModel):
+    user_id: str = Field(..., description="租户/用户唯一标识", min_length=1)
+
+
 class PresignedUrlRequest(BaseModel):
     filename: str = Field(..., description="原始文件名(用于确定扩展名)", min_length=1, max_length=500)
 
@@ -14,6 +18,7 @@ class PresignedUrlResponse(BaseModel):
 class DocumentUploadResponse(BaseModel):
     document_id: str = Field(..., description="存储中的唯一标识")
     filename: str = Field(..., description="原始文件名")
-    url: str = Field(..., description="OSS 公开访问地址")
+    url: str = Field(..., description="OSS 访问地址")
     indexed: bool = Field(..., description="是否已向量化入库")
     index_message: str = Field(..., description="入库结果描述")
+    summary: str | None = Field(None, description="文档全局摘要")

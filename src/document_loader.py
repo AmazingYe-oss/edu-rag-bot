@@ -1,10 +1,13 @@
 import json
+import asyncio
 from pathlib import Path
+from datetime import datetime
 
 import docx2txt
 from pypdf import PdfReader
-
 from llama_index.core.schema import Document
+from llama_index.core.node_parser import RecursiveCharacterTextSplitter
+from llama_index.llms.dashscope import DashScope as DashScopeLLM
 
 
 def read_txt_file(file_path: Path) -> str:
@@ -82,6 +85,55 @@ def read_ipynb_file(file_path: Path) -> str:
             parts.append(f"\n\n### Code 单元\n{source_text}")
 
     return "\n".join(parts).strip()
+
+
+async def generate_global_summary(text: str, api_key: str) -> str:
+    """
+    异步调用大模型生成全局摘要。
+    """
+    llm = DashScopeLLM(model="qwen-plus", api_key=api_key)
+    prompt = f"请为以下文档生成一段100字以内的全局摘要，包含文档类别、核心主题和适用对象：\n\n{text[:3000]}"
+    
+    try:
+        response = await llm.ainvoke(prompt)
+        return response.text.strip()
+    except Exception as e:
+        print(f"生成摘要失败: {e}")
+        return "未生成摘要"
+
+
+def chunk_document_with_metadata(
+    text: str, 
+    user_id: str, 
+    filename: str, 
+    summary: str,
+    chunk_size: int = 512,
+    chunk_overlap: int = 50
+) -> list[Document]:
+    """
+    智能切片并绑定多租户 Metadata。
+    """
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        separator="\n",
+    )
+    
+    nodes = splitter.get_nodes_from_documents([Document(text=text)])
+    
+    upload_time = datetime.now().isoformat()
+    metadata = {
+        "user_id": user_id,
+        "filename": filename,
+        "upload_time": upload_time,
+        "summary": summary,
+    }
+    
+    # 为每个切片绑定相同的元数据
+    for node in nodes:
+        node.metadata.update(metadata)
+        
+    return nodes
 
 
 def load_single_file(file_path: Path) -> Document | None:

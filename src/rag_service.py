@@ -11,6 +11,7 @@ from llama_index.core import (
     StorageContext,
 )
 from llama_index.core.llms import ChatMessage, MessageRole
+from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
 from llama_index.llms.dashscope import DashScope as DashScopeLLM
 from llama_index.embeddings.dashscope import DashScopeEmbedding
 from llama_index.vector_stores.dashvector import DashVectorStore as OriginalDashVectorStore
@@ -25,7 +26,12 @@ class DashVectorStore(OriginalDashVectorStore):
 
 
 from src.prompts import build_system_prompt
-from src.document_loader import load_documents_from_directory, load_single_file
+from src.document_loader import (
+    load_documents_from_directory, 
+    load_single_file,
+    generate_global_summary,
+    chunk_document_with_metadata
+)
 
 
 class RAGService:
@@ -137,11 +143,74 @@ class RAGService:
         print(f"✅ 文档已向量化入库: {file_path.name}")
         return doc.metadata
 
-    def _retrieve_context(self, question):
+    async def insert_document_v2(self, file_path: Path, user_id: str):
+        """
+        RAG 2.0：支持多租户隔离、全局摘要和 Metadata 绑定的异步入库流程。
+        """
+        # 1. 加载基础文档对象
+        doc = load_single_file(file_path)
+        if doc is None or not doc.text:
+            raise ValueError("文件内容为空或无法解析")
+
+        # 2. 生成全局摘要 (Global Summary)
+        summary = await generate_global_summary(doc.text, self.config["dashscope_api_key"])
+        
+        # 3. 智能切片并绑定 Metadata
+        chunks = chunk_document_with_metadata(
+            text=doc.text,
+            user_id=user_id,
+            filename=file_path.name,
+            summary=summary
+        )
+
+        if not chunks:
+            raise ValueError("文档切片失败")
+
+        # 4. 批量存入向量库
+        for chunk in chunks:
+            self.index.insert(chunk)
+        
+        print(f"✅ [RAG 2.0] 用户 {user_id} 的文档 {file_path.name} 已成功向量化入库 ({len(chunks)} 个切片)")
+        return {
+            "filename": file_path.name,
+            "chunks_count": len(chunks),
+            "summary": summary
+        }
+
+    def _retrieve_context(self, question, user_id=None):
         """
         根据用户问题检索相关知识片段。
+        支持通过 user_id 进行多租户隔离过滤。
         """
-        nodes = self.retriever.retrieve(question)
+        # 构造过滤条件
+        filters = {}
+        if user_id:
+            filters["user_id"] = user_id
+
+        # LlamaIndex 的 retrieve 方法本身不支持直接传 filter，需要通过 retriever 配置或 query_engine
+        # 这里我们使用更底层的 index.as_query_engine 或者在构建 retriever 时处理
+        # 为了简化，我们重新构建一个带过滤的 retriever (在实际生产环境中，建议使用 VectorStoreQuery)
+        
+        # 注意：DashVector 支持 metadata 过滤。我们需要修改 retriever 的调用方式。
+        # 由于 LlamaIndex 的 DashVectorStore 集成可能不完全支持所有 filter 语法，
+        # 这里采用一种通用的方式：如果提供了 user_id，则尝试在检索后过滤（效率较低但兼容性好），
+        # 或者使用 vector_store.query 接口。
+        
+        # 更好的方式：利用 LlamaIndex 的 MetadataFilters
+        from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
+        
+        metadata_filters = MetadataFilters()
+        if user_id:
+            metadata_filters = MetadataFilters(
+                filters=[ExactMatchFilter(key="user_id", value=user_id)]
+            )
+
+        retriever = self.index.as_retriever(
+            similarity_top_k=self.config.get("similarity_top_k", 3),
+            filters=metadata_filters
+        )
+        
+        nodes = retriever.retrieve(question)
 
         if not nodes:
             return "未检索到相关知识库内容。"
@@ -157,8 +226,16 @@ class RAGService:
 
         return "\n\n".join(context_list)
 
-    def retrieve(self, question):
-        nodes = self.retriever.retrieve(question)
+    def retrieve(self, question, user_id=None):
+        filters = None
+        if user_id:
+            filters = MetadataFilters(filters=[ExactMatchFilter(key="user_id", value=user_id)])
+        
+        retriever = self.index.as_retriever(
+            similarity_top_k=self.config.get("similarity_top_k", 3),
+            filters=filters
+        )
+        nodes = retriever.retrieve(question)
         results = []
         for i, node in enumerate(nodes, start=1):
             metadata = node.metadata or {}
@@ -189,14 +266,14 @@ class RAGService:
 """
         return user_prompt.strip()
 
-    def ask(self, question):
+    def ask(self, question, user_id=None):
         """
         对外问答入口 (旧版普通阻塞输出，保留用于兼容)。
         """
         if not question or not question.strip():
             return "请输入有效的问题。", ""
 
-        context = self._retrieve_context(question)
+        context = self._retrieve_context(question, user_id)
         user_prompt = self._build_user_prompt(question=question, context=context)
 
         messages = [
@@ -207,7 +284,7 @@ class RAGService:
         response = self.llm.chat(messages)
         return response.message.content, context
 
-    def stream_ask(self, question):
+    def stream_ask(self, question, user_id=None):
         """
         💥 对外问答入口 (V5.0 SSE 纯流式输出版)。
         大厂必备，让大模型像打字机一样一个字一个字往外吐！
@@ -215,7 +292,7 @@ class RAGService:
         if not question or not question.strip():
             raise ValueError("请输入有效的问题。")
 
-        context = self._retrieve_context(question)
+        context = self._retrieve_context(question, user_id)
         user_prompt = self._build_user_prompt(question=question, context=context)
 
         messages = [

@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 class SearchRequest(BaseModel):
     query: str = Field(..., description="检索查询语句", min_length=1, max_length=50000)
     top_k: int = Field(default=3, description="返回 Top-K 结果数", ge=1, le=20)
+    user_id: str | None = Field(None, description="租户/用户唯一标识，用于隔离检索")
 
 
 class SearchResultItem(BaseModel):
