@@ -11,7 +11,7 @@ import oss2
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.concurrency import run_in_threadpool
 
-from src.dependencies import rag_service, oss_bucket, config
+import src.dependencies as deps
 from src.schemas.document import (
     DocumentUploadRequest,
     PresignedUrlRequest,
@@ -28,7 +28,7 @@ async def upload_document(
     user_id: str = Form(...), 
     file: UploadFile = File(...)
 ):
-    if oss_bucket is None:
+    if deps.oss_bucket is None:
         raise HTTPException(status_code=503, detail="OSS 未配置，无法上传文件")
 
     # 1. OSS 多租户物理隔离路径拼接
@@ -40,8 +40,8 @@ async def upload_document(
     try:
         content = await file.read()
         import asyncio
-        await asyncio.to_thread(oss_bucket.put_object, oss_key, content)
-        file_url = f"https://{config['oss_bucket_name']}.{config['oss_endpoint']}/{oss_key}"
+        await asyncio.to_thread(deps.oss_bucket.put_object, oss_key, content)
+        file_url = f"https://{deps.config['oss_bucket_name']}.{deps.config['oss_endpoint']}/{oss_key}"
 
         suffix = f".{ext}" if ext else ""
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
@@ -51,7 +51,7 @@ async def upload_document(
         summary = None
         try:
             # 2. 调用 RAG 2.0 异步入库流程（含摘要生成与 Metadata 绑定）
-            result = await rag_service.insert_document_v2(Path(tmp_path), user_id)
+            result = await deps.rag_service.insert_document_v2(Path(tmp_path), user_id)
             indexed = True
             index_msg = f"已入库 ({result.get('chunks_count', 0)} 个切片)"
             summary = result.get('summary')
@@ -82,7 +82,7 @@ async def upload_document(
 
 @router.post("/presigned-url", response_model=PresignedUrlResponse)
 async def get_presigned_url(body: PresignedUrlRequest):
-    if oss_bucket is None:
+    if deps.oss_bucket is None:
         raise HTTPException(status_code=503, detail="OSS 未配置，无法生成上传链接")
 
     filename = body.filename
@@ -92,7 +92,7 @@ async def get_presigned_url(body: PresignedUrlRequest):
 
     try:
         import asyncio
-        presigned_url = await asyncio.to_thread(oss_bucket.sign_url, "PUT", oss_key, 300)
+        presigned_url = await asyncio.to_thread(deps.oss_bucket.sign_url, "PUT", oss_key, 300)
         return PresignedUrlResponse(
             upload_url=presigned_url,
             document_key=oss_key,
@@ -117,8 +117,8 @@ async def _process_single_file(
 
     try:
         content = await file.read()
-        await asyncio.to_thread(oss_bucket.put_object, oss_key, content)
-        file_url = f"https://{config['oss_bucket_name']}.{config['oss_endpoint']}/{oss_key}"
+        await asyncio.to_thread(deps.oss_bucket.put_object, oss_key, content)
+        file_url = f"https://{deps.config['oss_bucket_name']}.{deps.config['oss_endpoint']}/{oss_key}"
 
         suffix = f".{ext}" if ext else ""
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
@@ -127,7 +127,7 @@ async def _process_single_file(
 
         summary = None
         try:
-            result = await rag_service.insert_document_v2(Path(tmp_path), user_id)
+            result = await deps.rag_service.insert_document_v2(Path(tmp_path), user_id)
             indexed = True
             index_msg = f"已入库 ({result.get('chunks_count', 0)} 个切片)"
             summary = result.get('summary')
@@ -169,7 +169,7 @@ async def batch_upload_documents(
     """
     批量上传多个文件并入库（最多 10 个文件）。
     """
-    if oss_bucket is None:
+    if deps.oss_bucket is None:
         raise HTTPException(status_code=503, detail="OSS 未配置，无法上传文件")
 
     if len(files) > 10:
