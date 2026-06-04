@@ -167,8 +167,7 @@ class RAGService:
             raise ValueError("文档切片失败")
 
         # 4. 批量存入向量库
-        for chunk in chunks:
-            self.index.insert(chunk)
+        self.index.insert_nodes(chunks)
         
         print(f"✅ [RAG 2.0] 用户 {user_id} 的文档 {file_path.name} 已成功向量化入库 ({len(chunks)} 个切片)")
         return {

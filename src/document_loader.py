@@ -95,7 +95,7 @@ async def generate_global_summary(text: str, api_key: str) -> str:
     prompt = f"请为以下文档生成一段100字以内的全局摘要，包含文档类别、核心主题和适用对象：\n\n{text[:3000]}"
     
     try:
-        response = await llm.ainvoke(prompt)
+        response = await llm.acomplete(prompt)
         return response.text.strip()
     except Exception as e:
         print(f"生成摘要失败: {e}")
