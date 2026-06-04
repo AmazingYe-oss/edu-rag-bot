@@ -15,6 +15,10 @@ def _upload_url() -> str:
     return f"{API_BASE}/documents"
 
 
+def _batch_upload_url() -> str:
+    return f"{API_BASE}/documents/batch"
+
+
 custom_css = """
 footer {display: none !important;}
 /* 让输入区像一个精致的圆角对话框 */
@@ -75,22 +79,62 @@ def answer_question(history, session_id):
         yield history, ""
 
 
-def upload_file_to_oss(file):
+def upload_file_to_oss(file, user_id):
     if file is None:
         return "请先选择文件"
+    if not user_id or not user_id.strip():
+        return "请输入用户 ID"
     try:
         with open(file.name, "rb") as f:
             files = {"file": (os.path.basename(file.name), f, "application/octet-stream")}
-            response = requests.post(_upload_url(), files=files, timeout=120)
+            data = {"user_id": user_id}
+            response = requests.post(_upload_url(), files=files, data=data, timeout=120)
             response.raise_for_status()
             result = response.json()
             filename = result.get("filename", "未知")
             indexed = result.get("indexed", False)
             index_msg = result.get("index_message", "")
+            summary = result.get("summary", "")
             status = "✅ 已入库" if indexed else "⚠️ 未入库"
-            return f"✅ 上传成功！{status}\n文件: {filename}\n{index_msg}"
+            return f"✅ 上传成功！{status}\n文件: {filename}\n{index_msg}\n\n📝 摘要: {summary}"
     except Exception as e:
         return f"❌ 上传失败：{str(e)}"
+
+
+def batch_upload_files(files, user_id):
+    if not files:
+        return "请先选择文件"
+    if not user_id or not user_id.strip():
+        return "请输入用户 ID"
+    try:
+        files_data = [("files", (os.path.basename(f.name), open(f.name, "rb"), "application/octet-stream")) for f in files]
+        data = {"user_id": user_id}
+        response = requests.post(_batch_upload_url(), files=files_data, data=data, timeout=300)
+        
+        # 关闭文件句柄
+        for _, (_, fh, _) in files_data:
+            fh.close()
+        
+        response.raise_for_status()
+        result = response.json()
+        
+        total = result.get("total", 0)
+        success = result.get("success_count", 0)
+        failed = result.get("failed_count", 0)
+        
+        output_lines = [f"📊 批量上传完成：共 {total} 个文件，成功 {success} 个，失败 {failed} 个\n"]
+        
+        for i, item in enumerate(result.get("results", []), 1):
+            fname = item.get("filename", "未知")
+            indexed = item.get("indexed", False)
+            index_msg = item.get("index_message", "")
+            summary = item.get("summary", "")
+            status = "✅" if indexed else "❌"
+            output_lines.append(f"{i}. {status} {fname}\n   {index_msg}\n   摘要: {summary}\n")
+        
+        return "\n".join(output_lines)
+    except Exception as e:
+        return f"❌ 批量上传失败：{str(e)}"
 
 
 theme = gr.themes.Soft(
@@ -110,14 +154,23 @@ with gr.Blocks(title="AI 知识库助手", fill_height=True) as demo:
             
             ---
             
-            **📁 内部文档入库 (OSS)**
+            **📁 文档入库 (OSS)**
             """)
             
+            user_id_input = gr.Textbox(label="用户 ID", placeholder="请输入用户 ID", value="user_default")
+            
+            gr.Markdown("**单文件上传**")
             file_input = gr.File(label="", file_count="single", type="filepath")
-            upload_button = gr.Button("⬆️ 同步至云端", variant="secondary")
+            upload_button = gr.Button("⬆️ 上传单个文件", variant="secondary")
             upload_result = gr.Markdown(value="")
+            
+            gr.Markdown("**批量上传 (最多 10 个)**")
+            batch_file_input = gr.File(label="", file_count="multiple", type="filepath", file_types=[".pdf", ".docx", ".txt", ".md"])
+            batch_upload_button = gr.Button("📤 批量上传", variant="primary")
+            batch_upload_result = gr.Markdown(value="")
                 
-            upload_button.click(fn=upload_file_to_oss, inputs=file_input, outputs=upload_result)
+            upload_button.click(fn=upload_file_to_oss, inputs=[file_input, user_id_input], outputs=upload_result)
+            batch_upload_button.click(fn=batch_upload_files, inputs=[batch_file_input, user_id_input], outputs=batch_upload_result)
 
         with gr.Column(scale=4):
             chatbot = gr.Chatbot(
