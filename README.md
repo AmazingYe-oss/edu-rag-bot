@@ -1,26 +1,26 @@
-﻿# Edu RAG Bot — 多智能体教育辅导系统
+# Edu RAG Bot — 教育知识库智能问答系统
 
 ![Python](https://img.shields.io/badge/Python-3.10-blue?logo=python)
-![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi)
-![Streamlit](https://img.shields.io/badge/Streamlit-UI-FF4B4B?logo=streamlit)
-![LangGraph](https://img.shields.io/badge/LangGraph-Multi_Agent-000000?logo=langchain)
+![FastAPI](https://img.shields.io/badge/FastAPI-v6.0-009688?logo=fastapi)
+![Gradio](https://img.shields.io/badge/Gradio-UI-orange?logo=gradio)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-Ready-blue?logo=kubernetes)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-对话历史-336791?logo=postgresql)
-![Redis](https://img.shields.io/badge/Redis-会话缓存-dc382d?logo=redis)
-![DashVector](https://img.shields.io/badge/DashVector-向量检索-00c4b4)
+![DashVector](https://img.shields.io/badge/DashVector-Serverless_向量数据库-00c4b4)
+![Redis](https://img.shields.io/badge/Redis-会话缓存_&_限流-dc382d?logo=redis)
+![OSS](https://img.shields.io/badge/OSS-对象存储-blue?logo=alibabacloud)
+![Terraform](https://img.shields.io/badge/Terraform-IaC-purple?logo=terraform)
 ![CI/CD](https://img.shields.io/badge/CI-GitHub_Actions-green?logo=github-actions)
-![GitOps](https://img.shields.io/badge/GitOps-ArgoCD-orange?logo=argo)
+![Multi-Tenant](https://img.shields.io/badge/Multi--Tenant-RAG_2.0-orange)
 
 ## 项目简介
 
-本项目已演进为一个面向教育场景的 **多智能体（Multi-Agent）智能辅导系统**，基于 **LangGraph** 构建多 Agent 协作工作流，通过 8 个专业 AI Agent 协同工作，为学生提供个性化的学习辅导服务。
+本项目是一个面向教育场景的 **RAG（检索增强生成） 智能问答系统**，服务于企业内部新员工培训与知识管理。
 
-系统由 **Planner Agent** 统一识别学生意图，并将任务路由到 **Learner（知识讲解）**、**Quizzler（智能出题）**、**Scorer（自动批改）**、**Explainer（错题解析）**、**Chitchat（通用对话与联网搜索）** 等专业节点；教学类请求还会经过 **Critic Agent** 进行质量审查，审查通过后再由 **Summarizer Agent** 生成最终回复，以 **SSE 流式输出** 返回用户。
+系统基于 **LlamaIndex + 通义千问（DashScope）** 构建 RAG 检索链路，使用**阿里云 DashVector** 作为 Serverless 向量数据库，**阿里云 Redis** 提供会话记忆与 API 限流，**阿里云 OSS** 实现文档云端存储，前端采用 **Gradio** 交互式界面，后端采用 **FastAPI** 微服务架构，支持 **SSE 流式打字机输出**，并通过 **Docker + Kubernetes + GitHub Actions + GitOps** 实现云原生交付。
 
-在存储与记忆方面，系统使用 **PostgreSQL** 保存对话历史与用户画像，**DashVector** 既用于 RAG 语义检索，也承担长期记忆存储，**Redis** 提供会话缓存与限流保护；后端基于 **FastAPI**，前端采用 **Streamlit**，整体通过 **Docker + Kubernetes + GitHub Actions + ArgoCD GitOps** 实现云原生交付。
+**V6.0 RAG 2.0 核心升级**：引入多租户隔离架构，支持用户级文件物理隔离、全局摘要生成、智能切片与 Metadata 标签绑定，以及基于 `user_id` 的向量库检索过滤，确保数据安全与高精度检索。
 
-> 核心定位：将传统教育中的知识讲解、出题测试、批改评分、错题解析等环节，交由多个专业 AI Agent 协作完成，实现真正意义上的个性化智能教学。
+> 核心定位：将企业内部的制度文档、开发规范、课程资料等非结构化知识，转化为可即时检索、智能问答的 AI 知识库助手。
 
 ---
 
