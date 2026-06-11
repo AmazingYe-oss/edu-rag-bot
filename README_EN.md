@@ -1,26 +1,26 @@
-# Edu RAG Bot — AI Q&A System for Education Knowledge Base
+﻿# Edu RAG Bot — Multi-Agent Education Tutoring System
 
 ![Python](https://img.shields.io/badge/Python-3.10-blue?logo=python)
-![FastAPI](https://img.shields.io/badge/FastAPI-v6.0-009688?logo=fastapi)
-![Gradio](https://img.shields.io/badge/Gradio-UI-orange?logo=gradio)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi)
+![Streamlit](https://img.shields.io/badge/Streamlit-UI-FF4B4B?logo=streamlit)
+![LangGraph](https://img.shields.io/badge/LangGraph-Multi_Agent-000000?logo=langchain)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-Ready-blue?logo=kubernetes)
-![DashVector](https://img.shields.io/badge/DashVector-Serverless_Vector_DB-00c4b4)
-![Redis](https://img.shields.io/badge/Redis-Session_Cache_&_Rate_Limit-dc382d?logo=redis)
-![OSS](https://img.shields.io/badge/OSS-Object_Storage-blue?logo=alibabacloud)
-![Terraform](https://img.shields.io/badge/Terraform-IaC-purple?logo=terraform)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Conversation_History-336791?logo=postgresql)
+![Redis](https://img.shields.io/badge/Redis-Session_Cache-dc382d?logo=redis)
+![DashVector](https://img.shields.io/badge/DashVector-Vector_Retrieval-00c4b4)
 ![CI/CD](https://img.shields.io/badge/CI-GitHub_Actions-green?logo=github-actions)
-![Multi-Tenant](https://img.shields.io/badge/Multi--Tenant-RAG_2.0-orange)
+![GitOps](https://img.shields.io/badge/GitOps-ArgoCD-orange?logo=argo)
 
 ## Project Overview
 
-This project is an **RAG (Retrieval-Augmented Generation) AI Q&A system** designed for education scenarios, serving enterprise internal new employee onboarding and knowledge management.
+This project has evolved into a **Multi-Agent intelligent tutoring system** designed for education scenarios. It is built on **LangGraph** to orchestrate collaborative workflows across 8 specialized AI Agents, providing students with personalized learning assistance.
 
-The system builds its RAG retrieval pipeline based on **LlamaIndex + Tongyi Qianwen (DashScope)**, using **Alibaba Cloud DashVector** as a Serverless vector database, **Alibaba Cloud Redis** for session memory and API rate limiting, and **Alibaba Cloud OSS** for document cloud storage. The frontend adopts a **Gradio** interactive interface, while the backend uses a **FastAPI** microservice architecture with **SSE streaming typewriter output**, achieving cloud-native delivery through **Docker + Kubernetes + GitHub Actions + GitOps**.
+A **Planner Agent** identifies student intent and routes tasks to dedicated nodes such as **Learner (knowledge explanation)**, **Quizzler (question generation)**, **Scorer (automatic grading)**, **Explainer (mistake analysis)**, and **Chitchat (general conversation with web search)**. Educational requests are further reviewed by a **Critic Agent**, and once approved, the **Summarizer Agent** generates the final response and returns it to the user through **SSE streaming output**.
 
-**V6.0 RAG 2.0 Core Upgrade**: Introduces multi-tenant isolation architecture, supporting user-level file physical isolation, global summary generation, intelligent chunking with Metadata tag binding, and `user_id`-based vector database retrieval filtering, ensuring data security and high-precision retrieval.
+For storage and memory, the system uses **PostgreSQL** to persist conversation history and user profiles, **DashVector** for both RAG semantic retrieval and long-term memory storage, and **Redis** for session caching and rate limiting. The backend is built with **FastAPI**, the frontend uses **Streamlit**, and the entire system achieves cloud-native delivery through **Docker + Kubernetes + GitHub Actions + ArgoCD GitOps**.
 
-> Core Positioning: Transform unstructured enterprise knowledge — such as policy documents, development standards, and training materials — into an AI knowledge base assistant capable of instant retrieval and intelligent Q&A.
+> Core Positioning: Delegate knowledge explanation, quiz generation, grading, and error analysis to multiple specialized AI Agents working collaboratively, achieving truly personalized intelligent teaching.
 
 ---
 
